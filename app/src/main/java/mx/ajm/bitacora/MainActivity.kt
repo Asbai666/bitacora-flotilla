@@ -75,6 +75,9 @@ class MainActivity : AppCompatActivity() {
             allowFileAccess = true
             textZoom = 100
         }
+        // siempre en modo claro
+        if (Build.VERSION.SDK_INT >= 33) web.settings.isAlgorithmicDarkeningAllowed = false
+        else if (Build.VERSION.SDK_INT >= 29) web.settings.forceDark = android.webkit.WebSettings.FORCE_DARK_OFF
         web.webChromeClient = WebChromeClient()
         web.addJavascriptInterface(Bridge(), "Android")
         web.loadUrl("file:///android_asset/index.html")

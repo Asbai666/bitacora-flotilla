@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
 <title>Bitácora Flotilla</title>
 <style>
 /* Una columna para el celular: estado del día → paso actual (inicio / en ruta / cierre) → registros → ajustes. */
@@ -14,10 +15,7 @@
   --body:Roboto,system-ui,sans-serif;
   --mono:"Roboto Mono",monospace;
 }
-@media (prefers-color-scheme: dark){:root{
-  --bg:#0d171c; --surface:#152229; --ink:#e4ecef; --muted:#93a6b0; --line:#2a3b44;
-  --petrol:#2d8396; --amber:#f0b33a; --amber-soft:#3a2e14; --ok:#5cc28f; --ok-soft:#163327;
-  --bad:#ef7d70; --bad-soft:#3d1d19; --rest:#a79cf0; --rest-soft:#26223f; color-scheme:dark}}
+:root{color-scheme:light}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45}
@@ -468,7 +466,8 @@ async function takePhoto(slot, source) {
     if (slot === "ini") { autoFill("kmIni", km); autoFill("fTras", isoOf(new Date(r.time))); autoFill("deC", coordStr(r.lat, r.lon)); autoFill("de", r.address); }
     if (slot === "fin") { autoFill("kmFin", km); autoFill("aC", coordStr(r.lat, r.lon)); autoFill("a", r.address); }
   } else if (slot[0] === "p") {
-    const km = readOdometer(lines, num(day.entry.kmIni) ?? sheet.lastKm);
+    const st = day.stopsDone[Number(slot.slice(1))];
+    const km = readOdometer(lines, st && st.km ? st.km : (num(day.entry.kmIni) ?? sheet.lastKm));
     p.read = km !== null ? fmt(km) + " km" : "";
     if (km === null) p.note = "No se distingue el odómetro; escribe el km o toma la foto más cerca.";
     setModal("m_km", km);
@@ -702,15 +701,16 @@ async function closeTramo(s, km, a, aC, asunto, slots) {
   const r = await saveRow(sl);
   const g = A.trackKm(day.date, day.tramoStart || 0, s.end || Date.now());
   rowGps[day.entry.fTras + "|" + r.row] = g; save(RGKEY, rowGps);
-  day.done.push({ row: r.row, de: day.entry.de, a, km: km - (num(day.entry.kmIni) || km), gps: g });
+  day.done.push({ row: r.row, de: day.entry.de, a, km: km - (num(day.entry.kmIni) || km), gps: g, entry: Object.assign({}, day.entry) });
   day.stopsDone[s.start] = { row: r.row, km };
   // el siguiente tramo sale de esta parada
   slots.concat(["ini", "ticket", "ticketCar", "odoCarga"]).forEach(k => { delete day.photos[k]; A.clearPhoto(k); });
   day.entry = { fTras: day.date, kmIni: String(km), de: a, deC: aC, asunto };
   day.row = null; day.tramoStart = s.end || Date.now(); day.cargaSaved = false;
   persist(); render();
-  banner("ok", "Tramo guardado en la fila " + r.row, "Siguiente tramo desde " + (a || "esta parada") + ", km " + fmt(km) + "." + (r.evidenceTab ? " Carga en " + r.evidenceTab + "." : ""), null, "ok");
+  if (slots.length) banner("ok", "Tramo guardado en la fila " + r.row, "Siguiente tramo desde " + (a || "esta parada") + ", km " + fmt(km) + "." + (r.evidenceTab ? " Carga en " + r.evidenceTab + "." : ""), null, "ok");
   loadSheet();
+  return r.row;
 }
 function promptPending() {
   if (day.stage !== "running" || !$("modal").hidden) return;
@@ -723,8 +723,62 @@ $("btnAddStop").onclick = async () => {
   const r = await nat("addStop", day.date);
   b.disabled = false; b.textContent = "Agregar parada aquí";
   if (!r.ok) { banner("bad", "No se agregó la parada", r.error); return; }
-  setTimeout(() => { renderTrack(); promptPending(); }, 600);
+  // llena la fila del tramo en automático con el km estimado por GPS y la ubicación actual
+  await new Promise(res => setTimeout(res, 700));
+  const t = JSON.parse(A.track(day.date));
+  const s = t.stops[t.stops.length - 1];
+  const ini = num(day.entry.kmIni), tk = tramoKm();
+  if (!s || ini === null) { renderTrack(); promptPending(); return; }
+  const km = Math.round(ini + (tk || 0));
+  b.disabled = true; b.textContent = "Guardando en la hoja…";
+  try {
+    const row = await closeTramo(s, km, r.address || coordStr(r.lat, r.lon), coordStr(r.lat, r.lon), day.entry.asunto || "", []);
+    renderTrack();
+    openConfirm(s, t.stops.length - 1, row, km);
+  } catch (e) {
+    banner("bad", "La parada se guardó en el recorrido, pero no en la hoja", e.message + ". Toca la parada para reintentar.");
+    renderTrack();
+  } finally { b.disabled = false; b.textContent = "Agregar parada aquí"; }
 };
+
+// Después de llenar la fila en automático: fotos opcionales para confirmar el km y dejar evidencia
+function openConfirm(s, i, row, kmEst) {
+  const kp = "p" + s.start, kl = "l" + s.start;
+  const done = day.done.find(d => d.row === row);
+  openModal(sh => {
+    sh.appendChild(el("h2", "", "Parada " + (i + 1) + " guardada en la fila " + row));
+    sh.appendChild(el("p", "hint", "Se llenó con el km estimado por GPS (" + fmt(kmEst) + ") y tu ubicación. Toma la foto del odómetro y la del lugar para confirmar el km real y dejar la evidencia."));
+    const d1 = el("div"); d1.id = "shot-" + kp; const d2 = el("div"); d2.id = "shot-" + kl; sh.append(d1, d2);
+    const lab = el("label", "", "Km real en esta parada"); const inp = el("input", "num"); inp.id = "m_km"; inp.type = "number"; inp.value = kmEst; inp.oninput = () => inp.classList.remove("auto", "bad"); lab.appendChild(inp);
+    const la = el("label", "", "Llega a (dirección)"); const ia = el("input"); ia.id = "m_a"; ia.value = done ? done.entry.a : ""; la.appendChild(ia);
+    const lc = el("label", "", "Coordenadas"); const ic = el("input", "num"); ic.id = "m_aC"; ic.value = done ? done.entry.aC : ""; lc.appendChild(ic);
+    sh.append(lab, la, lc);
+    const err = el("div", "err"); err.hidden = true; sh.appendChild(err);
+    const act = el("div", "actions");
+    const ok = el("button", "primary", "Actualizar fila " + row + " con las fotos"), later = el("button", "ghost", "Listo, sin fotos");
+    ok.onclick = async () => {
+      const km = num(inp.value);
+      if (km === null || !done) { inp.classList.add("bad"); return; }
+      ok.disabled = true; ok.textContent = "Subiendo fotos…";
+      try {
+        const entry = Object.assign({}, done.entry, { kmFin: String(km), a: ia.value.trim(), aC: ic.value.trim() });
+        const slots = [kp, kl].filter(k => day.photos[k] && day.photos[k].preview && !day.photos[k].uploaded).map(k => ({ slot: k }));
+        const res = await call("save", { row, entry, photoSlots: slots });
+        if (!res.ok) throw new Error(res.error);
+        slots.forEach(x => { delete day.photos[x.slot]; A.clearPhoto(x.slot); });
+        done.entry = entry; done.km = km - (num(entry.kmIni) || km); done.a = entry.a;
+        day.stopsDone[s.start].km = km;
+        // el tramo actual sale de esta parada: corrige su km inicial
+        if (day.done[day.done.length - 1] === done) { day.entry.kmIni = String(km); day.entry.de = entry.a; day.entry.deC = entry.aC; }
+        persist(); render(); closeModal();
+        banner("ok", "Fila " + row + " actualizada", "Km " + fmt(km) + (slots.length ? " y fotos en Drive." : "."), null, "ok");
+      } catch (e) { err.textContent = e.message; err.hidden = false; ok.disabled = false; ok.textContent = "Reintentar"; }
+    };
+    later.onclick = closeModal;
+    act.append(ok, later); sh.appendChild(act);
+  });
+  drawShot(kp); drawShot(kl);
+}
 function updateCompare() {
   const ini = num($("kmIni").value), fin = num($("kmFin").value);
   const odo = ini !== null && fin !== null ? fin - ini : null;
@@ -759,7 +813,7 @@ async function loadSheet() {
 }
 function renderList() {
   const rows = sheet.rows || [];
-  $("capacity").textContent = rows.length + " de 36 filas";
+  $("capacity").textContent = rows.length + " registros · la hoja agrega filas sola";
   const list = $("list"); list.textContent = "";
   if (!rows.length) { list.appendChild(el("div", "empty", "Todavía no hay registros este mes.")); return; }
   rows.slice().reverse().forEach(x => {

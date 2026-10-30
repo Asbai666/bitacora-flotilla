@@ -12,8 +12,8 @@ import java.util.Locale
 class Prefs(ctx: Context) {
     private val p: SharedPreferences = ctx.getSharedPreferences("bitacora", Context.MODE_PRIVATE)
 
-    init {   // versión 2: paradas a los 2 min dentro de 100 m
-        if (p.getInt("schema", 1) < 2) p.edit().putInt("stopMinutes", 2).putInt("schema", 2).apply()
+    init {
+        if (p.getInt("schema", 1) < 3) p.edit().putInt("stopMinutes", 5).putInt("schema", 3).apply()   // v1.3: paradas a los 5 min
     }
 
     var scriptUrl: String
@@ -40,7 +40,7 @@ class Prefs(ctx: Context) {
         get() = p.getInt("workDays", 0b1111110)
         set(v) = p.edit().putInt("workDays", v).apply()
     var stopMinutes: Int
-        get() = p.getInt("stopMinutes", 2)
+        get() = p.getInt("stopMinutes", 5)
         set(v) = p.edit().putInt("stopMinutes", v).apply()
 
     // ---- estado del día ----

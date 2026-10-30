@@ -12,8 +12,7 @@ const CONFIG = {
   FOLDER_ID: '1mgISCQa_doMf-vZWSCGjhrqIhX0m-qvx',          // "Bitácora Flotilla - Evidencias"
   TAB: 'Bitácora',
   EVIDENCE_TABS: ['1a Evidencia', '2a Evidencia', '3a Evidencia'],
-  FIRST_ROW: 9,
-  LAST_ROW: 44,
+  FIRST_ROW: 9,              // primera fila de captura; la última se calcula (fila anterior a TOTAL)
   REST_LABEL: 'DÍA DE DESCANSO'
 };
 
@@ -36,7 +35,7 @@ function doPost(e) {
     if (req.token !== CONFIG.TOKEN) return json_({ ok: false, error: 'Clave de acceso incorrecta' });
     lock.waitLock(30000);
     switch (req.action) {
-      case 'ping':   return json_({ ok: true });
+      case 'ping':   fixTotals_(sh_()); return json_({ ok: true, version: 2 });
       case 'read':   return json_(read_());
       case 'save':   return json_(save_(req));
       case 'rest':   return json_(rest_(req));
@@ -73,13 +72,43 @@ function iso_(v) {
   if (v instanceof Date && !isNaN(v)) return Utilities.formatDate(v, ss_().getSpreadsheetTimeZone(), 'yyyy-MM-dd');
   return '';
 }
+// Fila de totales ("TOTAL" en la columna B) y última fila de captura
+function totalsRow_(sh) {
+  const col = sh.getRange(CONFIG.FIRST_ROW, 2, sh.getMaxRows() - CONFIG.FIRST_ROW + 1, 1).getValues();
+  for (let i = 0; i < col.length; i++) if (String(col[i][0]).trim().toUpperCase() === 'TOTAL') return CONFIG.FIRST_ROW + i;
+  throw new Error('No encontré la fila de TOTAL en la hoja Bitácora');
+}
+function lastRow_(sh) { return totalsRow_(sh) - 1; }
+
+// Agrega filas antes de TOTAL con el mismo formato y actualiza las sumas
+function addRows_(sh, howMany) {
+  const tot = totalsRow_(sh);
+  sh.insertRowsBefore(tot, howMany);
+  const model = sh.getRange(tot - 1, 1, 1, 15);
+  for (let i = 0; i < howMany; i++) {
+    const r = tot + i;
+    model.copyTo(sh.getRange(r, 1, 1, 15), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+    try { sh.getRange(r, 10, 1, 2).merge(); } catch (e) {}
+    sh.setRowHeight(r, sh.getRowHeight(tot - 1));
+  }
+  fixTotals_(sh);
+}
+function fixTotals_(sh) {
+  const tot = totalsRow_(sh), last = tot - 1, f = CONFIG.FIRST_ROW;
+  sh.getRange(tot, 3).setFormula('=SUM(C' + f + ':C' + last + ')');
+  sh.getRange(tot, 4).setFormula('=SUM(D' + f + ':D' + last + ')');
+  sh.getRange(tot, 9).setFormula('=SUM(I' + f + ':I' + last + ')');
+  sh.getRange(tot, 13).setFormula('=IFERROR(I' + tot + '/D' + tot + ',0)');
+}
+
 function rowFilled_(r) { return [0, 1, 2, 3, 4, 5, 6, 7, 9, 11, 12, 13, 14].some(i => !blank_(r[i])); }
 
 // ---------- lectura ----------
 function read_() {
   const sh = sh_();
   const head = sh.getRange('A5:O5').getValues()[0];
-  const data = sh.getRange(CONFIG.FIRST_ROW, 1, CONFIG.LAST_ROW - CONFIG.FIRST_ROW + 1, 15).getValues();
+  const last = lastRow_(sh);
+  const data = sh.getRange(CONFIG.FIRST_ROW, 1, last - CONFIG.FIRST_ROW + 1, 15).getValues();
   const rows = [];
   let firstFree = null, lastKm = null;
   data.forEach((r, i) => {
@@ -97,19 +126,22 @@ function read_() {
   return {
     ok: true,
     header: { mes: String(head[1]), usuario: String(head[6]), placas: String(head[11]), tag: String(head[14]) },
-    rows: rows, firstFree: firstFree, lastKm: lastKm
+    rows: rows, firstFree: firstFree, lastKm: lastKm, capacity: last - CONFIG.FIRST_ROW + 1
   };
 }
 
 function pickRow_(sh, requested) {
+  const last = lastRow_(sh);
   if (requested) {
     const r = Number(requested);
-    if (r < CONFIG.FIRST_ROW || r > CONFIG.LAST_ROW) throw new Error('Fila fuera del rango 9–44');
+    if (r < CONFIG.FIRST_ROW || r > last) throw new Error('Fila fuera del rango de captura (' + CONFIG.FIRST_ROW + '–' + last + ')');
     return r;
   }
-  const data = sh.getRange(CONFIG.FIRST_ROW, 1, CONFIG.LAST_ROW - CONFIG.FIRST_ROW + 1, 15).getValues();
+  const data = sh.getRange(CONFIG.FIRST_ROW, 1, last - CONFIG.FIRST_ROW + 1, 15).getValues();
   for (let i = 0; i < data.length; i++) if (!rowFilled_(data[i])) return CONFIG.FIRST_ROW + i;
-  throw new Error('La bitácora ya no tiene filas libres (9 a 44). Empieza el archivo del siguiente mes.');
+  // sin filas libres: se agregan 5 más antes de TOTAL con el mismo formato
+  addRows_(sh, 5);
+  return last + 1;
 }
 
 // Escribe la fila exactamente con las columnas de la hoja (A–O)
@@ -152,7 +184,7 @@ function save_(req) {
   // pestaña de evidencia cuando hay carga
   let evidenceTab = null;
   if (num_(e.importe) !== '' && num_(e.importe) > 0) {
-    const data = sh.getRange(CONFIG.FIRST_ROW, 3, CONFIG.LAST_ROW - CONFIG.FIRST_ROW + 1, 1).getValues();
+    const data = sh.getRange(CONFIG.FIRST_ROW, 3, lastRow_(sh) - CONFIG.FIRST_ROW + 1, 1).getValues();
     const cargas = [];
     data.forEach((v, i) => { if (num_(v[0]) !== '' && num_(v[0]) > 0) cargas.push(CONFIG.FIRST_ROW + i); });
     const idx = cargas.indexOf(r);
@@ -206,8 +238,9 @@ function rest_(req) {
 // ---------- borrar ----------
 function del_(req) {
   const r = Number(req.row);
-  if (!(r >= CONFIG.FIRST_ROW && r <= CONFIG.LAST_ROW)) throw new Error('Fila no válida');
-  sh_().getRange(r, 1, 1, 15).clearContent();
+  const sh = sh_();
+  if (!(r >= CONFIG.FIRST_ROW && r <= lastRow_(sh))) throw new Error('Fila no válida');
+  sh.getRange(r, 1, 1, 15).clearContent();
   return { ok: true, row: r };
 }
 
