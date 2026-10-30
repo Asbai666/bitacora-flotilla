@@ -245,6 +245,30 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface fun stopTracking() { TrackingService.stop(this@MainActivity) }
 
+        /** Parada manual en la ubicación actual. */
+        @JavascriptInterface fun addStop(cb: Int, date: String) = runOnUiThread {
+            ensure(basePerms()) {
+                lifecycleScope.launch {
+                    val l = currentLocation()
+                    if (l == null) { reply(cb, JSONObject().put("ok", false).put("error", "No se obtuvo la ubicación. Revisa que el GPS esté encendido.")); return@launch }
+                    val addr = withContext(Dispatchers.IO) { address(l.first, l.second) }
+                    val d = date.ifEmpty { Prefs.today() }
+                    if (prefs.tracking && prefs.trackDate == d) TrackingService.manualStop(this@MainActivity, l.first, l.second, addr)
+                    else withContext(Dispatchers.IO) {
+                        val list = store.stops(d); val now = System.currentTimeMillis()
+                        list.add(Stop(now, now, l.first, l.second, addr, open = false, manual = true)); store.saveStops(d, list)
+                    }
+                    reply(cb, JSONObject().put("ok", true).put("lat", l.first).put("lon", l.second).put("address", addr))
+                }
+            }
+        }
+
+        @JavascriptInterface fun removeStop(date: String, index: Int) {
+            val d = date.ifEmpty { Prefs.today() }
+            if (prefs.tracking && prefs.trackDate == d) TrackingService.removeStop(this@MainActivity, index)
+            else store.removeStop(d, index)
+        }
+
         @JavascriptInterface fun track(date: String): String =
             store.summary(date.ifEmpty { Prefs.today() }).put("active", prefs.tracking && prefs.trackDate == Prefs.today()).toString()
 
@@ -272,11 +296,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        @JavascriptInterface fun exportTrack(cb: Int, date: String, upload: Boolean) {
+        @JavascriptInterface fun exportTrack(cb: Int, date: String, upload: Boolean, odoKm: String) {
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
                     val d = date.ifEmpty { Prefs.today() }
-                    val kml = store.buildKml(d, prefs.name, prefs.plates)
+                    val kml = store.buildKml(d, prefs.name, prefs.plates, odoKm)
                     val csv = store.buildCsv(d)
                     store.kmlFile(d).writeText(kml)
                     val local = saveToDownloads("Recorrido $d.kml", "application/vnd.google-earth.kml+xml", kml.toByteArray())

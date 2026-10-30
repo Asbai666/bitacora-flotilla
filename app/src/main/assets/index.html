@@ -108,6 +108,20 @@ details .card{border:0;padding:0}
 .sheet{background:var(--bg);border-radius:16px 16px 0 0;max-height:92vh;overflow:auto;padding:16px 16px 28px;display:grid;gap:14px}
 .choice{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 [hidden]{display:none!important}
+.wrap{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:15;display:grid;grid-template-columns:repeat(3,1fr);background:var(--surface);border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px))}
+.tabs button{background:transparent;color:var(--muted);border:0;border-radius:10px;padding:8px 4px;display:grid;justify-items:center;gap:2px;font-size:12.5px;font-weight:600}
+.tabs button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tabs button[aria-selected="true"]{color:var(--petrol);background:var(--bg)}
+.tabs .dot{position:absolute;margin-left:18px;width:8px;height:8px;border-radius:50%;background:var(--bad)}
+.cmp{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.cmp div{background:var(--surface);padding:8px 10px}
+.cmp .k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.cmp .v{font-family:var(--mono);font-size:16px}
+.cmp .v.warn{color:var(--bad)}
+.stop .x{background:transparent;border:1px solid var(--line);color:var(--muted);padding:4px 8px;font-size:12px;border-radius:6px}
+.stop .x.armed{border-color:var(--bad);color:var(--bad)}
+.stop .tag{font-size:10.5px;background:var(--amber-soft);border-radius:4px;padding:0 4px;margin-left:4px}
 </style>
 </head>
 <body>
@@ -125,6 +139,7 @@ details .card{border:0;padding:0}
 
   <div id="banners" style="display:grid;gap:8px"></div>
 
+  <div id="tab-hoy" role="tabpanel" style="display:grid;gap:16px">
   <!-- Primera vez: conectar con la hoja -->
   <section class="card" id="setup" hidden>
     <h2>Conecta tu hoja</h2>
@@ -153,12 +168,13 @@ details .card{border:0;padding:0}
   <section class="card" id="stepRun" hidden>
     <div class="row2"><h2>En ruta</h2><span class="hint" id="runSince"></span></div>
     <div class="stats">
-      <div class="stat"><div class="k">Km por GPS</div><div class="v" id="gKm">0.0</div></div>
+      <div class="stat"><div class="k">Recorrido GPS</div><div class="v" id="gKm">0.0</div></div>
+      <div class="stat"><div class="k">Odómetro est.</div><div class="v" id="gEst">—</div></div>
       <div class="stat"><div class="k">Paradas</div><div class="v" id="gStops">0</div></div>
-      <div class="stat"><div class="k">Km inicial</div><div class="v" id="gIni">—</div></div>
     </div>
+    <p class="hint" id="gIni"></p>
     <div id="gpsWarn" class="err" hidden></div>
-    <h3>Paradas de 5 min o más</h3>
+    <div class="row2"><h3 id="stopsTitle">Paradas</h3><button class="primary small" id="btnAddStop">Agregar parada aquí</button></div>
     <div class="stops" id="stopList"><div class="empty">Aún no hay paradas. Se registran solas cuando el vehículo se queda quieto.</div></div>
     <div class="actions">
       <button class="ghost small" id="btnEarth">Ver recorrido en Google Earth</button>
@@ -191,6 +207,12 @@ details .card{border:0;padding:0}
         <label>Km final<input class="num" type="number" inputmode="numeric" id="kmFin"></label>
         <div class="odo"><span class="hint">Recorrido</span><span class="digits" id="odo"><span>0</span></span><span class="hint">km</span></div>
       </div>
+      <div class="cmp" id="cmp">
+        <div><div class="k">Por odómetro</div><div class="v" id="cOdo">—</div></div>
+        <div><div class="k">Por GPS</div><div class="v" id="cGps">—</div></div>
+        <div><div class="k">Diferencia</div><div class="v" id="cDif">—</div></div>
+      </div>
+      <button class="ghost small" id="btnUseGps" hidden>Usar km final estimado por GPS</button>
       <label>Llega a (dirección)<input id="a" placeholder="Calle, colonia, municipio"></label>
       <label>Coordenadas de llegada<input class="num" id="aC" placeholder="19.784100, -99.193200"></label>
       <div class="err" id="endErr" hidden></div>
@@ -208,15 +230,22 @@ details .card{border:0;padding:0}
     </div>
   </section>
 
-  <section style="display:grid;gap:10px">
+  </div>
+
+  <section id="tab-reg" role="tabpanel" style="display:grid;gap:10px" hidden>
     <div class="row2"><h2>Registros del mes</h2><span class="hint" id="capacity"></span></div>
     <div class="list" id="list"><div class="empty">Conecta la hoja para ver los registros.</div></div>
     <button class="ghost small" id="btnReload">Actualizar desde la hoja</button>
   </section>
 
-  <details id="settings">
-    <summary>Ajustes y permisos</summary>
+  <section id="tab-aj" role="tabpanel" hidden>
     <div class="card">
+      <h2>Ajustes</h2>
+      <h3>Conexión con la hoja</h3>
+      <p class="hint" id="connState"></p>
+      <label>Dirección del servicio de Google (/exec)<input id="sUrl" autocomplete="off"></label>
+      <button class="ghost small" id="btnPing">Probar conexión</button>
+
       <h3>Permisos para trabajar en segundo plano</h3>
       <div id="perms"></div>
       <button class="ghost small" id="btnTest">Probar alerta</button>
@@ -225,7 +254,7 @@ details .card{border:0;padding:0}
       <div class="grid">
         <label>Recordar inicio<input type="time" id="sStart"></label>
         <label>Recordar cierre<input type="time" id="sEnd"></label>
-        <label>Parada después de (min)<input type="number" id="sStop" min="2" max="30"></label>
+        <label>Parada después de (min)<input type="number" id="sStop" min="1" max="30"></label>
       </div>
       <div class="days" id="sDays"></div>
 
@@ -237,11 +266,16 @@ details .card{border:0;padding:0}
       </div>
       <label>Usuario (No. de empleado _ Nombre completo)<input id="vUser"></label>
       <label>TAG / No. de tarjeta<input id="vTag"></label>
-      <label>Dirección del servicio de Google<input id="sUrl" autocomplete="off"></label>
       <div class="actions"><button class="primary" id="btnSaveSettings">Guardar ajustes</button></div>
     </div>
-  </details>
+  </section>
 </div>
+
+<nav class="tabs" role="tablist" aria-label="Secciones">
+  <button role="tab" id="t-hoy" aria-selected="true" data-tab="hoy"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 1 18 0"/><path d="M12 12l5-5"/><circle cx="12" cy="12" r="1.5"/><path d="M5 19h14"/></svg>Hoy</button>
+  <button role="tab" id="t-reg" aria-selected="false" data-tab="reg"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Registros</button>
+  <button role="tab" id="t-aj" aria-selected="false" data-tab="aj"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>Ajustes</button>
+</nav>
 
 <div class="modal" id="modal" hidden><div class="sheet" id="sheet"></div></div>
 
@@ -319,6 +353,7 @@ window.onNative = (type, s) => {
   if (type === "perms") renderPerms();
 };
 function showAlert(kind, title, text) {
+  if ($("tab-hoy") && $("tab-hoy").hidden && kind !== "test") showTab("hoy");
   if (kind === "start") banner("alert", title || "Registra el inicio de jornada", text || "Toma la foto del odómetro al salir.", [{ label: "Ir al inicio", cls: "primary", run: () => $("stepStart").scrollIntoView() }], "a-start");
   else if (kind === "end") banner("alert", title || "Registra el fin de jornada", text || "Toma la foto del odómetro al llegar.", [{ label: "Ir al cierre", cls: "primary", run: () => $("btnEnd").scrollIntoView({ block: "center" }) }], "a-end");
   else if (kind === "stop") banner("alert", title || "Vehículo detenido", text || "", null, "a-stop");
@@ -449,6 +484,7 @@ FIELDS.forEach(k => $(k).addEventListener("input", () => { $(k).classList.remove
 function updateOdo() {
   const a = num($("kmIni").value), b = num($("kmFin").value), d = a !== null && b !== null ? Math.max(0, b - a) : 0;
   const o = $("odo"); o.textContent = ""; String(Math.round(d)).split("").forEach(c => o.appendChild(el("span", "", c)));
+  if ($("cOdo")) updateCompare();
 }
 function need(ids, errEl, msg) {
   const bad = ids.filter(([id, ok]) => !ok(day.entry[id]));
@@ -539,7 +575,9 @@ $("btnEnd").onclick = async () => {
     const slots = [{ slot: "fin" }].concat(fuel ? evidenceSlots() : []);
     const r = await saveRow(slots);
     b.textContent = "Guardando recorrido…";
-    const k = await nat("exportTrack", day.date, true);
+    const iniK = num(day.entry.kmIni), finK = num(day.entry.kmFin);
+    const k = await nat("exportTrack", day.date, true, iniK !== null && finK !== null ? String(finK - iniK) : "");
+    day.gpsKm = gpsKm(day.date);
     day.stage = "closed"; day.kml = k; persist();
     banner("ok", "Día cerrado", "Fila " + r.row + " completa." + (k.links && k.links.kml ? " Recorrido guardado en Drive." : "") + (k.local ? " Copia en " + k.local + "." : ""), null, "ok");
     loadSheet();
@@ -555,27 +593,62 @@ $("btnEarth2").onclick = () => A.openEarth(day.date);
 $("btnNewDay").onclick = () => { day = freshDay(); persist(); render(); };
 
 // ---------- recorrido ----------
+function gpsKm(date) { try { const t = JSON.parse(A.track(date || day.date)); return t.points > 1 ? t.km : null; } catch (e) { return null; } }
+let armedStop = -1;
 function renderTrack() {
+  updateCompare();
   if (day.stage !== "running") return;
   const t = JSON.parse(A.track(day.date));
-  $("gKm").textContent = fmt(t.km, 1);
+  const ini = num(day.entry.kmIni);
+  $("gKm").textContent = fmt(t.km, 1) + " km";
+  $("gEst").textContent = ini !== null ? fmt(Math.round(ini + t.km)) : "—";
   $("gStops").textContent = t.stops.length;
-  $("gIni").textContent = has(day.entry.kmIni) ? fmt(num(day.entry.kmIni)) : "—";
+  $("gIni").textContent = (ini !== null ? "Km inicial " + fmt(ini) + " · " : "") + "el odómetro estimado suma el recorrido GPS al km inicial.";
   $("runSince").textContent = day.startedAt ? "desde las " + hm(day.startedAt) : "";
+  $("stopsTitle").textContent = "Paradas (" + cfg.stopMinutes + " min dentro de 100 m)";
   const w = $("gpsWarn");
   if (!t.active) { w.hidden = false; w.textContent = "La grabación del recorrido está detenida. "; const b = el("button", "small primary", "Reanudar"); b.onclick = startTracking; w.appendChild(b); }
   else if (t.last && Date.now() - t.last.t > 5 * 60000) { w.hidden = false; w.textContent = "Sin señal de GPS desde las " + hm(t.last.t) + ". Revisa que la ubicación esté encendida."; }
   else w.hidden = true;
   const list = $("stopList"); list.textContent = "";
-  if (!t.stops.length) list.appendChild(el("div", "empty", "Aún no hay paradas. Se registran solas cuando el vehículo se queda quieto " + cfg.stopMinutes + " minutos."));
+  if (!t.stops.length) list.appendChild(el("div", "empty", "Aún no hay paradas. Se registran solas cuando el vehículo se queda " + cfg.stopMinutes + " min dentro de 100 m, o agrégala con el botón."));
   t.stops.forEach((s, i) => {
-    const r = el("div", "stop");
-    const a = el("div", "a"); a.append(el("div", "", s.address || coordStr(s.lat, s.lon)), el("div", "hint", coordStr(s.lat, s.lon)));
-    r.append(el("span", "n", i + 1), a, el("span", "m", hm(s.start) + (s.open ? " · ahora" : "–" + hm(s.end)) + "\n" + s.minutes + " min"));
-    r.lastChild.style.whiteSpace = "pre"; r.lastChild.style.textAlign = "right";
+    const r = el("div", "stop"); r.style.gridTemplateColumns = "auto 1fr auto auto";
+    const a = el("div", "a");
+    const t1 = el("div", "", s.address || coordStr(s.lat, s.lon)); if (s.manual) t1.appendChild(el("span", "tag", "manual"));
+    a.append(t1, el("div", "hint", coordStr(s.lat, s.lon)));
+    const m = el("span", "m", hm(s.start) + (s.open ? " · ahora" : "–" + hm(s.end)) + "\n" + s.minutes + " min"); m.style.whiteSpace = "pre"; m.style.textAlign = "right";
+    const x = el("button", "x" + (armedStop === i ? " armed" : ""), armedStop === i ? "¿Borrar?" : "✕");
+    x.setAttribute("aria-label", "Borrar parada " + (i + 1));
+    x.onclick = () => { if (armedStop !== i) { armedStop = i; renderTrack(); return; } armedStop = -1; A.removeStop(day.date, i); setTimeout(renderTrack, 400); };
+    r.append(el("span", "n", i + 1), a, m, x);
     list.appendChild(r);
   });
 }
+$("btnAddStop").onclick = async () => {
+  const b = $("btnAddStop"); b.disabled = true; b.textContent = "Ubicando…";
+  const r = await nat("addStop", day.date);
+  b.disabled = false; b.textContent = "Agregar parada aquí";
+  if (!r.ok) { banner("bad", "No se agregó la parada", r.error); return; }
+  banner("ok", "Parada agregada", (r.address || coordStr(r.lat, r.lon)) + ". Se cierra sola cuando el vehículo se aleje.", null, "ok");
+  setTimeout(renderTrack, 500);
+};
+function updateCompare() {
+  const ini = num($("kmIni").value), fin = num($("kmFin").value);
+  const odo = ini !== null && fin !== null ? fin - ini : null;
+  const gps = gpsKm(day.date);
+  $("cOdo").textContent = odo !== null ? fmt(odo) + " km" : "—";
+  $("cGps").textContent = gps !== null ? fmt(gps, 1) + " km" : "—";
+  const dif = $("cDif");
+  if (odo !== null && gps !== null) {
+    const d = odo - gps, pct = gps > 0 ? Math.abs(d) / gps * 100 : 0;
+    dif.textContent = (d > 0 ? "+" : "") + fmt(d, 1) + " km";
+    dif.className = "v" + (pct > 15 && Math.abs(d) > 3 ? " warn" : "");
+    dif.title = pct.toFixed(0) + "%";
+  } else { dif.textContent = "—"; dif.className = "v"; }
+  $("btnUseGps").hidden = !(day.stage === "running" && fin === null && ini !== null && gps !== null && gps > 0);
+}
+$("btnUseGps").onclick = () => { const ini = num($("kmIni").value), gps = gpsKm(day.date); if (ini === null || gps === null) return; autoFill("kmFin", Math.round(ini + gps)); updateOdo(); };
 setInterval(renderTrack, 30000);
 
 // ---------- hoja ----------
@@ -603,6 +676,8 @@ function renderList() {
     const t = el("span", "t"); t.append(el("b", "", x.asunto || "Sin asunto"), el("span", "", rest ? "Sin movimiento" : (x.de || "—") + " → " + (x.a || "—")));
     const km = x.kmIni !== "" && x.kmFin !== "" ? fmt(x.kmFin - x.kmIni) + " km" : "—";
     const m = el("span", "m", km);
+    const g = !rest && x.fTras ? gpsKm(x.fTras) : null;
+    if (g !== null) { m.appendChild(el("br")); m.appendChild(el("span", "hint", "GPS " + fmt(g, 1) + " km")); }
     if (x.importe) { m.appendChild(el("br")); m.appendChild(el("span", "fuel", money(x.importe) + " · " + fmt(x.litros, 1) + " L")); }
     const d = x.fTras ? x.fTras.slice(8, 10) + "/" + x.fTras.slice(5, 7) : "—";
     b.append(el("span", "d", d), t, m);
@@ -687,6 +762,7 @@ $("btnSaveSettings").onclick = async () => {
   const b = $("btnSaveSettings"); b.disabled = true; b.textContent = "Guardando…";
   const r = cfg.scriptUrl ? await call("header", h) : { ok: true };
   b.disabled = false; b.textContent = "Guardar ajustes";
+  renderConn();
   if (r.ok) { banner("ok", "Ajustes guardados", "Alertas a las " + toTime(cfg.startAt) + " y " + toTime(cfg.endAt) + ".", null, "ok"); render(); loadSheet(); }
   else banner("bad", "Los ajustes se guardaron en el teléfono, pero no en la hoja", r.error);
 };
@@ -700,8 +776,8 @@ $("cfgSave").onclick = async () => {
   const r = await call("ping");
   b.disabled = false; b.textContent = "Probar y guardar";
   if (!r.ok) { banner("bad", "No hubo respuesta correcta del servicio", r.error); return; }
-  banner("ok", "Conectado a tu hoja", "", null, "ok");
-  render(); loadSheet(); nat("permissions").then(x => { cfg.perms = x; renderPerms(); });
+  banner("ok", "Conectado a tu hoja", "La conexión quedó guardada en la pestaña Ajustes.", null, "ok");
+  $("sUrl").value = cfg.scriptUrl; renderConn(); render(); showTab("hoy"); loadSheet(); nat("permissions").then(x => { cfg.perms = x; renderPerms(); });
 };
 
 // ---------- recordatorios dentro de la app ----------
@@ -728,7 +804,8 @@ function render() {
   if (day.stage === "closed") {
     $("doneTitle").textContent = "Día cerrado";
     const ini = num(day.entry.kmIni), fin = num(day.entry.kmFin);
-    $("doneText").textContent = "Fila " + day.row + " · " + (ini !== null && fin !== null ? fmt(fin - ini) + " km por odómetro" : "") + (day.kml && day.kml.local ? " · KML en " + day.kml.local : "");
+    const g = day.gpsKm ?? gpsKm(day.date);
+    $("doneText").textContent = "Fila " + day.row + " · " + (ini !== null && fin !== null ? fmt(fin - ini) + " km por odómetro" : "") + (g !== null ? " · " + fmt(g, 1) + " km por GPS" : "") + (day.kml && day.kml.local ? " · KML en " + day.kml.local : "");
     $("btnEarth2").hidden = false; $("btnNewDay").hidden = false;
   }
   if (day.stage === "rest") {
@@ -740,11 +817,34 @@ function render() {
   fillForm(); renderTrack();
 }
 
+// ---------- pestañas ----------
+function showTab(t) {
+  ["hoy", "reg", "aj"].forEach(k => { $("tab-" + k).hidden = k !== t; $("t-" + k).setAttribute("aria-selected", String(k === t)); });
+  save("bitacora-tab", t); window.scrollTo(0, 0);
+  if (t === "reg") renderList();
+}
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
+function renderConn() {
+  $("connState").textContent = cfg.scriptUrl ? "Conectada. La app escribe en tu hoja “Bitácora Flotilla”." : "Sin conectar. Pega la dirección que termina en /exec.";
+}
+$("btnPing").onclick = async () => {
+  const u = $("sUrl").value.trim();
+  if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(u)) { banner("bad", "Dirección no válida", "Debe empezar con https://script.google.com/ y terminar en /exec."); return; }
+  A.setConfig(JSON.stringify({ scriptUrl: u })); cfg = JSON.parse(A.config());
+  const b = $("btnPing"); b.disabled = true; b.textContent = "Probando…";
+  const r = await call("ping");
+  b.disabled = false; b.textContent = "Probar conexión";
+  if (r.ok) { banner("ok", "Conexión correcta", "", null, "ok"); render(); loadSheet(); } else banner("bad", "La conexión falló", r.error);
+  renderConn();
+};
+
 // ---------- arranque ----------
 $("who").textContent = cfg.name;
 renderSettings();
 persist();
 render();
+renderConn();
+showTab(cfg.scriptUrl ? (load("bitacora-tab", "hoy") || "hoy") : "hoy");
 if (cfg.scriptUrl) { loadSheet(); nat("permissions").then(x => { cfg.perms = x; renderPerms(); }); }
 setTimeout(checkReminders, 800);
 })();

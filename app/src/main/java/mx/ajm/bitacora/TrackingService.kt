@@ -55,6 +55,38 @@ class TrackingService : Service() {
     @SuppressLint("MissingPermission")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { finish(); return START_NOT_STICKY }
+        if (date.isEmpty()) date = prefs.trackDate.ifEmpty { Prefs.today() }
+        if (intent?.action == ACTION_MANUAL) {
+            val lat = intent.getDoubleExtra("lat", 0.0); val lon = intent.getDoubleExtra("lon", 0.0)
+            val addr = intent.getStringExtra("address") ?: ""
+            io.execute {
+                val stops = store.stops(date)
+                // si ya hay una parada abierta, se cierra antes de abrir la manual
+                stops.getOrNull(detector.openIndex)?.let { it.open = false; it.end = maxOf(it.end, detector.lastInsideT) }
+                val now = System.currentTimeMillis()
+                stops.add(Stop(now, now, lat, lon, addr, open = true, manual = true))
+                detector.openManual(stops.size - 1, lat, lon, now)
+                store.saveStops(date, stops)
+                try { store.stateFile().writeText(detector.toJson().toString()) } catch (e: Exception) { }
+                MainActivity.emit("track", store.summary(date))
+            }
+            return START_STICKY
+        }
+        if (intent?.action == ACTION_REMOVE) {
+            val idx = intent.getIntExtra("index", -1)
+            io.execute {
+                val stops = store.stops(date)
+                if (idx in stops.indices) {
+                    stops.removeAt(idx)
+                    if (detector.openIndex == idx) detector.openIndex = -1
+                    else if (detector.openIndex > idx) detector.openIndex -= 1
+                    store.saveStops(date, stops)
+                    try { store.stateFile().writeText(detector.toJson().toString()) } catch (e: Exception) { }
+                }
+                MainActivity.emit("track", store.summary(date))
+            }
+            return START_STICKY
+        }
         date = prefs.trackDate.ifEmpty { Prefs.today() }
         try { detector.restore(JSONObject(store.stateFile().readText())) } catch (e: Exception) { }
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
@@ -136,6 +168,17 @@ class TrackingService : Service() {
 
     companion object {
         const val ACTION_STOP = "mx.ajm.bitacora.STOP_TRACKING"
+        const val ACTION_MANUAL = "mx.ajm.bitacora.MANUAL_STOP"
+        const val ACTION_REMOVE = "mx.ajm.bitacora.REMOVE_STOP"
+
+        fun removeStop(ctx: Context, index: Int) {
+            ctx.startService(Intent(ctx, TrackingService::class.java).setAction(ACTION_REMOVE).putExtra("index", index))
+        }
+
+        fun manualStop(ctx: Context, lat: Double, lon: Double, address: String) {
+            ctx.startService(Intent(ctx, TrackingService::class.java).setAction(ACTION_MANUAL)
+                .putExtra("lat", lat).putExtra("lon", lon).putExtra("address", address))
+        }
 
         fun start(ctx: Context): Boolean {
             val p = Prefs(ctx)

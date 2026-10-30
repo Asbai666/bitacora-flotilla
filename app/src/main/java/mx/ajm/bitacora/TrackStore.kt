@@ -17,17 +17,17 @@ data class Pt(val t: Long, val lat: Double, val lon: Double, val acc: Float, val
 
 data class Stop(
     var start: Long, var end: Long, var lat: Double, var lon: Double,
-    var address: String = "", var open: Boolean = true
+    var address: String = "", var open: Boolean = true, var manual: Boolean = false
 ) {
     fun minutes(): Long = (end - start) / 60000
     fun toJson(): JSONObject = JSONObject().apply {
         put("start", start); put("end", end); put("lat", lat); put("lon", lon)
-        put("address", address); put("open", open); put("minutes", minutes())
+        put("address", address); put("open", open); put("minutes", minutes()); put("manual", manual)
     }
     companion object {
         fun from(o: JSONObject) = Stop(
             o.getLong("start"), o.getLong("end"), o.getDouble("lat"), o.getDouble("lon"),
-            o.optString("address", ""), o.optBoolean("open", false)
+            o.optString("address", ""), o.optBoolean("open", false), o.optBoolean("manual", false)
         )
     }
 }
@@ -73,6 +73,12 @@ class TrackStore(private val ctx: Context) {
         stopsFile(date).writeText(a.toString())
     }
 
+    @Synchronized
+    fun removeStop(date: String, index: Int): Boolean {
+        val l = stops(date); if (index !in l.indices) return false
+        l.removeAt(index); saveStops(date, l); return true
+    }
+
     fun distanceKm(date: String): Double {
         val pts = points(date).filter { it.acc <= 40f }
         var d = 0.0
@@ -97,7 +103,7 @@ class TrackStore(private val ctx: Context) {
     }
 
     // ---------- KML (Google Earth) ----------
-    fun buildKml(date: String, who: String, plates: String): String {
+    fun buildKml(date: String, who: String, plates: String, odoKm: String = ""): String {
         val pts = points(date).filter { it.acc <= 50f }
         val st = stops(date)
         val hm = SimpleDateFormat("HH:mm", Locale.US)
@@ -107,7 +113,7 @@ class TrackStore(private val ctx: Context) {
 <kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
 <Document>
 <name>${esc("Recorrido $date · $who")}</name>
-<description>${esc("Vehículo $plates · ${"%.1f".format(Locale.US, distanceKm(date))} km por GPS · ${st.size} paradas de 5 min o más")}</description>
+<description>${esc("Vehículo $plates · ${"%.1f".format(Locale.US, distanceKm(date))} km por GPS" + (if (odoKm.isNotBlank()) " · $odoKm km por odómetro" else "") + " · ${st.size} paradas")}</description>
 <Style id="ruta"><LineStyle><color>ff17a3e8</color><width>5</width></LineStyle></Style>
 <Style id="parada"><IconStyle><color>ff2b37b4</color><scale>1.2</scale><Icon><href>http://maps.google.com/mapfiles/kml/paddle/red-circle.png</href></Icon></IconStyle></Style>
 <Style id="inicio"><IconStyle><scale>1.2</scale><Icon><href>http://maps.google.com/mapfiles/kml/paddle/grn-circle.png</href></Icon></IconStyle></Style>
@@ -123,7 +129,7 @@ class TrackStore(private val ctx: Context) {
         }
         sb.append("<Folder><name>Paradas</name>\n")
         st.forEachIndexed { i, s ->
-            val title = "Parada ${i + 1} · ${hm.format(Date(s.start))}–${hm.format(Date(s.end))} (${s.minutes()} min)"
+            val title = (if (s.manual) "Parada manual " else "Parada ") + "${i + 1} · ${hm.format(Date(s.start))}–${hm.format(Date(s.end))} (${s.minutes()} min)"
             sb.append("<Placemark><name>${esc(title)}</name><description>${esc(s.address + "\n" + "%.6f, %.6f".format(Locale.US, s.lat, s.lon))}</description>")
             sb.append("<TimeSpan><begin>${iso.format(Date(s.start))}</begin><end>${iso.format(Date(s.end))}</end></TimeSpan>")
             sb.append("<styleUrl>#parada</styleUrl><Point><coordinates>${s.lon},${s.lat},0</coordinates></Point></Placemark>\n")
@@ -134,9 +140,9 @@ class TrackStore(private val ctx: Context) {
 
     fun buildCsv(date: String): String {
         val hm = SimpleDateFormat("HH:mm", Locale.US)
-        val sb = StringBuilder("parada,fecha,llegada,salida,minutos,latitud,longitud,direccion\n")
+        val sb = StringBuilder("parada,tipo,fecha,llegada,salida,minutos,latitud,longitud,direccion\n")
         stops(date).forEachIndexed { i, s ->
-            sb.append("${i + 1},$date,${hm.format(Date(s.start))},${hm.format(Date(s.end))},${s.minutes()},")
+            sb.append("${i + 1},${if (s.manual) "manual" else "automatica"},$date,${hm.format(Date(s.start))},${hm.format(Date(s.end))},${s.minutes()},")
             sb.append("%.6f,%.6f,".format(Locale.US, s.lat, s.lon))
             sb.append("\"").append(s.address.replace("\"", "'")).append("\"\n")
         }
@@ -195,6 +201,11 @@ class StopDetector(private val minutes: Int) {
         return null
     }
 
+    /** Parada agregada a mano: queda abierta hasta que el vehículo se aleje. */
+    fun openManual(index: Int, lat: Double, lon: Double, t: Long) {
+        anchorLat = lat; anchorLon = lon; anchorT = t; lastInsideT = t; openIndex = index; hasAnchor = true
+    }
+
     private fun reset(p: Pt) { anchorLat = p.lat; anchorLon = p.lon; anchorT = p.t; lastInsideT = p.t; hasAnchor = true }
 
     fun toJson(): JSONObject = JSONObject().apply {
@@ -205,5 +216,5 @@ class StopDetector(private val minutes: Int) {
         lastInsideT = o.optLong("in"); openIndex = o.optInt("open", -1); hasAnchor = o.optBoolean("has", false)
     }
 
-    companion object { const val RADIO = 60.0; const val SALIDA = 120.0 }
+    companion object { const val RADIO = 100.0; const val SALIDA = 150.0 }
 }
