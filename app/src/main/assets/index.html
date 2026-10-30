@@ -350,16 +350,16 @@ function beep() {
 window.onNative = (type, s) => {
   const d = JSON.parse(s);
   if (type === "alert" && d.kind !== "test") { beep(); showAlert(d.kind, d.title, d.text); }
-  if (type === "openAlert") { if (d.kind === "stop") { renderTrack(); setTimeout(promptPending, 300); } else showAlert(d.kind); }
+  if (type === "openAlert") { if (d.kind === "stop") { renderTrack(); setTimeout(autoRegisterPending, 300); } else showAlert(d.kind); }
   if (type === "track" || type === "stopClosed") renderTrack();
-  if (type === "resume") { cfg = JSON.parse(A.config()); renderPerms(); renderTrack(); checkReminders(); setTimeout(promptPending, 500); }
+  if (type === "resume") { cfg = JSON.parse(A.config()); renderPerms(); renderTrack(); checkReminders(); setTimeout(autoRegisterPending, 500); }
   if (type === "perms") renderPerms();
 };
 function showAlert(kind, title, text) {
   if ($("tab-hoy") && $("tab-hoy").hidden && kind !== "test") showTab("hoy");
   if (kind === "start") banner("alert", title || "Registra el inicio de jornada", text || "Toma la foto del odómetro al salir.", [{ label: "Ir al inicio", cls: "primary", run: () => $("stepStart").scrollIntoView() }], "a-start");
   else if (kind === "end") banner("alert", title || "Registra el fin de jornada", text || "Toma la foto del odómetro al llegar.", [{ label: "Ir al cierre", cls: "primary", run: () => $("btnEnd").scrollIntoView({ block: "center" }) }], "a-end");
-  else if (kind === "stop") { banner("alert", title || "Parada detectada", text || "Toma la foto del odómetro y la del lugar.", [{ label: "Tomar fotos", cls: "primary", run: promptPending }], "a-stop"); setTimeout(promptPending, 300); }
+  else if (kind === "stop") { banner("alert", title || "Parada detectada", text || "Toma la foto del odómetro y la del lugar.", [{ label: "Ver parada", cls: "primary", run: autoRegisterPending }], "a-stop"); setTimeout(autoRegisterPending, 300); }
   else if (kind === "resume") banner("bad", "La grabación del recorrido se detuvo", "Toca Reanudar para seguir grabando.", [{ label: "Reanudar", cls: "primary", run: startTracking }], "a-resume");
 }
 window.onBack = () => { if (!$("modal").hidden) { closeModal(); return true; } return false; };
@@ -643,9 +643,13 @@ function renderTrack() {
     a.append(t1, el("div", "hint", coordStr(s.lat, s.lon)));
     const m = el("span", "m", hm(s.start) + (s.open ? " · ahora" : "–" + hm(s.end)) + "\n" + s.minutes + " min"); m.style.whiteSpace = "pre"; m.style.textAlign = "right";
     const st = day.stopsDone[s.start];
-    if (st && st.row) a.appendChild(el("div", "hint", "Fotos ✓ · tramo guardado en fila " + st.row));
-    else if (st && st.ignored) a.appendChild(el("div", "hint", "Ignorada (no cerró tramo)"));
-    else { const f = el("button", "small primary", "Tomar fotos y cerrar tramo"); f.style.marginTop = "6px"; f.onclick = () => openStop(s, i); a.appendChild(f); }
+    if (st && st.row) {
+      a.appendChild(el("div", "hint", "Registro en la fila " + st.row + (st.confirmed ? " · fotos ✓" : " · km estimado por GPS")));
+      if (!st.confirmed) { const f = el("button", "small ghost", "Confirmar km con fotos"); f.style.marginTop = "6px"; f.onclick = () => openConfirm(s, i, st.row, st.km); a.appendChild(f); }
+    }
+    else if (st && st.ignored) a.appendChild(el("div", "hint", "No fue parada (sin registro)"));
+    else if (registering) a.appendChild(el("div", "hint", "Guardando registro…"));
+    else { const f = el("button", "small primary", "Tomar fotos y registrar"); f.style.marginTop = "6px"; f.onclick = () => openStop(s, i); a.appendChild(f); }
     const x = el("button", "x" + (armedStop === i ? " armed" : ""), armedStop === i ? "¿Borrar?" : "✕");
     x.setAttribute("aria-label", "Borrar parada " + (i + 1));
     x.onclick = () => { if (armedStop !== i) { armedStop = i; renderTrack(); return; } armedStop = -1; A.removeStop(day.date, i); setTimeout(renderTrack, 400); };
@@ -694,51 +698,59 @@ function updateStopModal() {
   const ini = num(day.entry.kmIni), tk = tramoKm();
   e.textContent = ini !== null && tk !== null ? "Estimado por GPS: " + fmt(Math.round(ini + tk)) + " km (" + fmt(tk, 1) + " km de tramo)" : "";
 }
-async function closeTramo(s, km, a, aC, asunto, slots) {
+async function closeTramo(s, km, a, aC, asunto, slots, gpsTo) {
   day.entry = Object.assign({}, day.entry, { kmFin: String(km), a, aC, asunto });
   const fuel = num(day.entry.importe) > 0 && !day.cargaSaved;
   const sl = slots.map(x => ({ slot: x })).concat(fuel ? evidenceSlots() : []);
   const r = await saveRow(sl);
-  const g = A.trackKm(day.date, day.tramoStart || 0, s.end || Date.now());
+  const g = A.trackKm(day.date, day.tramoStart || 0, gpsTo || s.end || Date.now());
+  const prev = { start: day.tramoStart, cargaSaved: day.cargaSaved };
   rowGps[day.entry.fTras + "|" + r.row] = g; save(RGKEY, rowGps);
-  day.done.push({ row: r.row, de: day.entry.de, a, km: km - (num(day.entry.kmIni) || km), gps: g, entry: Object.assign({}, day.entry) });
-  day.stopsDone[s.start] = { row: r.row, km };
+  day.done.push({ row: r.row, de: day.entry.de, a, km: km - (num(day.entry.kmIni) || km), gps: g, entry: Object.assign({}, day.entry), prev, stop: s.start });
+  day.stopsDone[s.start] = { row: r.row, km, confirmed: slots.length > 0 };
   // el siguiente tramo sale de esta parada
   slots.concat(["ini", "ticket", "ticketCar", "odoCarga"]).forEach(k => { delete day.photos[k]; A.clearPhoto(k); });
   day.entry = { fTras: day.date, kmIni: String(km), de: a, deC: aC, asunto };
-  day.row = null; day.tramoStart = s.end || Date.now(); day.cargaSaved = false;
+  day.row = null; day.tramoStart = gpsTo || s.end || Date.now(); day.cargaSaved = false;
   persist(); render();
   if (slots.length) banner("ok", "Tramo guardado en la fila " + r.row, "Siguiente tramo desde " + (a || "esta parada") + ", km " + fmt(km) + "." + (r.evidenceTab ? " Carga en " + r.evidenceTab + "." : ""), null, "ok");
   loadSheet();
   return r.row;
 }
-function promptPending() {
-  if (day.stage !== "running" || !$("modal").hidden) return;
-  const p = pendingStops();
-  if (p.length) { const o = p[p.length - 1]; showTab("hoy"); openStop(o.s, o.i); }
+// Cada parada (detectada o manual) se vuelve un registro en la hoja de inmediato,
+// con el km estimado por GPS; después se confirma con las fotos.
+let registering = false;
+async function autoRegisterPending() {
+  if (day.stage !== "running" || registering) return;
+  const pend = pendingStops();
+  if (!pend.length) return;
+  if (num(day.entry.kmIni) === null) { if ($("modal").hidden) { showTab("hoy"); openStop(pend[0].s, pend[0].i); } return; }
+  registering = true; renderTrack();
+  let last = null;
+  try {
+    for (const o of pend) {
+      const s = o.s, ini = num(day.entry.kmIni);
+      const tk = A.trackKm(day.date, day.tramoStart || 0, s.start);
+      const km = Math.round(ini + (tk || 0));
+      const row = await closeTramo(s, km, s.address || coordStr(s.lat, s.lon), coordStr(s.lat, s.lon), day.entry.asunto || "", [], s.start);
+      last = { s, i: o.i, row, km };
+    }
+  } catch (e) {
+    banner("bad", "La parada quedó en el recorrido, pero no se guardó en la hoja", e.message + ". Se reintentará al volver a abrir la app o con el botón de la parada.", [{ label: "Reintentar ahora", cls: "primary", run: autoRegisterPending }], "regfail");
+  } finally { registering = false; renderTrack(); }
+  if (last && $("modal").hidden) { showTab("hoy"); openConfirm(last.s, last.i, last.row, last.km); }
 }
+const promptPending = autoRegisterPending;
 
 $("btnAddStop").onclick = async () => {
   const b = $("btnAddStop"); b.disabled = true; b.textContent = "Ubicando…";
   const r = await nat("addStop", day.date);
   b.disabled = false; b.textContent = "Agregar parada aquí";
   if (!r.ok) { banner("bad", "No se agregó la parada", r.error); return; }
-  // llena la fila del tramo en automático con el km estimado por GPS y la ubicación actual
+  // la parada manual se registra en la hoja igual que las detectadas
   await new Promise(res => setTimeout(res, 700));
-  const t = JSON.parse(A.track(day.date));
-  const s = t.stops[t.stops.length - 1];
-  const ini = num(day.entry.kmIni), tk = tramoKm();
-  if (!s || ini === null) { renderTrack(); promptPending(); return; }
-  const km = Math.round(ini + (tk || 0));
   b.disabled = true; b.textContent = "Guardando en la hoja…";
-  try {
-    const row = await closeTramo(s, km, r.address || coordStr(r.lat, r.lon), coordStr(r.lat, r.lon), day.entry.asunto || "", []);
-    renderTrack();
-    openConfirm(s, t.stops.length - 1, row, km);
-  } catch (e) {
-    banner("bad", "La parada se guardó en el recorrido, pero no en la hoja", e.message + ". Toca la parada para reintentar.");
-    renderTrack();
-  } finally { b.disabled = false; b.textContent = "Agregar parada aquí"; }
+  try { await autoRegisterPending(); } finally { b.disabled = false; b.textContent = "Agregar parada aquí"; }
 };
 
 // Después de llenar la fila en automático: fotos opcionales para confirmar el km y dejar evidencia
@@ -767,7 +779,7 @@ function openConfirm(s, i, row, kmEst) {
         if (!res.ok) throw new Error(res.error);
         slots.forEach(x => { delete day.photos[x.slot]; A.clearPhoto(x.slot); });
         done.entry = entry; done.km = km - (num(entry.kmIni) || km); done.a = entry.a;
-        day.stopsDone[s.start].km = km;
+        day.stopsDone[s.start].km = km; day.stopsDone[s.start].confirmed = true;
         // el tramo actual sale de esta parada: corrige su km inicial
         if (day.done[day.done.length - 1] === done) { day.entry.kmIni = String(km); day.entry.de = entry.a; day.entry.deC = entry.aC; }
         persist(); render(); closeModal();
@@ -775,7 +787,26 @@ function openConfirm(s, i, row, kmEst) {
       } catch (e) { err.textContent = e.message; err.hidden = false; ok.disabled = false; ok.textContent = "Reintentar"; }
     };
     later.onclick = closeModal;
-    act.append(ok, later); sh.appendChild(act);
+    act.append(ok, later);
+    if (day.done[day.done.length - 1] === done) {
+      const undo = el("button", "danger", "No fue parada: quitar fila " + row);
+      let armed = false;
+      undo.onclick = async () => {
+        if (!armed) { armed = true; undo.textContent = "Toca otra vez para quitar la fila " + row; return; }
+        undo.disabled = true;
+        const res = await call("delete", { row });
+        if (!res.ok) { err.textContent = res.error; err.hidden = false; undo.disabled = false; return; }
+        // el tramo vuelve a abrirse desde donde venía
+        const e = done.entry;
+        day.entry = Object.assign({}, e, { kmFin: "", a: "", aC: "" });
+        day.row = null; day.tramoStart = done.prev ? done.prev.start : day.tramoStart; day.cargaSaved = done.prev ? done.prev.cargaSaved : false;
+        day.done.pop(); day.stopsDone[s.start] = { ignored: true };
+        persist(); render(); closeModal(); loadSheet();
+        banner("ok", "Fila " + row + " quitada", "El tramo sigue abierto desde " + (e.de || "el inicio") + ".", null, "ok");
+      };
+      act.appendChild(undo);
+    }
+    sh.appendChild(act);
   });
   drawShot(kp); drawShot(kl);
 }
@@ -992,7 +1023,7 @@ persist();
 render();
 renderConn();
 showTab(cfg.scriptUrl ? (load("bitacora-tab", "hoy") || "hoy") : "hoy");
-if (cfg.scriptUrl) { loadSheet(); nat("permissions").then(x => { cfg.perms = x; renderPerms(); }); }
+if (cfg.scriptUrl) { setTimeout(autoRegisterPending, 1500); loadSheet(); nat("permissions").then(x => { cfg.perms = x; renderPerms(); }); }
 setTimeout(checkReminders, 800);
 })();
 </script>

@@ -107,8 +107,8 @@ class TrackingService : Service() {
                 ev.stop.address = address(ev.stop.lat, ev.stop.lon)
                 store.saveStops(date, stops)
                 val hm = SimpleDateFormat("HH:mm", Locale.US).format(Date(ev.stop.start))
-                Alerts.alert(this, Alerts.ID_STOP, "Parada desde las $hm: toma las fotos",
-                    "Vehículo detenido${if (ev.stop.address.isNotEmpty()) " en " + ev.stop.address else ""}. Toca para tomar la foto del odómetro y la del lugar, y cerrar el tramo en la bitácora.", "stop")
+                Alerts.alert(this, Alerts.ID_STOP, "Parada desde las $hm: nuevo registro",
+                    "Vehículo detenido${if (ev.stop.address.isNotEmpty()) " en " + ev.stop.address else ""}. Toca para guardarla en la bitácora y confirmar el km con la foto del odómetro y la del lugar.", "stop")
             }
             is StopDetector.Event.Closed -> {
                 store.saveStops(date, stops)

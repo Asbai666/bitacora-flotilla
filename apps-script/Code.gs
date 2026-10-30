@@ -139,8 +139,8 @@ function pickRow_(sh, requested) {
   }
   const data = sh.getRange(CONFIG.FIRST_ROW, 1, last - CONFIG.FIRST_ROW + 1, 15).getValues();
   for (let i = 0; i < data.length; i++) if (!rowFilled_(data[i])) return CONFIG.FIRST_ROW + i;
-  // sin filas libres: se agregan 5 más antes de TOTAL con el mismo formato
-  addRows_(sh, 5);
+  // sin filas libres: se agrega una fila nueva antes de TOTAL con el mismo formato
+  addRows_(sh, 1);
   return last + 1;
 }
 
