@@ -136,7 +136,7 @@ class PhotoProcessor(private val ctx: Context) {
         val fs = max(18f, min(w, h) * 0.042f)
         val df = SimpleDateFormat("dd/MM/yyyy  HH:mm 'hrs'", Locale.US)
         val coords = if (m.lat != null && m.lon != null) "Lat, Lon  %.6f, %.6f".format(Locale.US, m.lat, m.lon) else "Sin coordenadas"
-        val label = (LABELS[slot] ?: slot) + (if (plates.isNotBlank()) "  ·  $plates" else "") + "  ·  Totalplay"
+        val label = label(slot) + (if (plates.isNotBlank()) "  ·  $plates" else "") + "  ·  Totalplay"
         val lines = listOf(Triple(who, 1.15f, true), Triple(df.format(Date(m.time)), 1f, false), Triple(coords, 1f, false), Triple(label, 0.8f, false))
         val lh = fs * 1.32f; val pad = fs * 0.7f
         val bandH = lines.sumOf { (lh * it.second).toDouble() }.toFloat() + pad * 2
@@ -178,6 +178,11 @@ class PhotoProcessor(private val ctx: Context) {
     }
 
     companion object {
+        fun label(slot: String): String = LABELS[slot] ?: when {
+            slot.startsWith("p") -> "Odómetro en parada"
+            slot.startsWith("l") -> "Foto de la parada"
+            else -> slot
+        }
         val LABELS = mapOf(
             "ini" to "Odómetro al salir", "fin" to "Odómetro al llegar",
             "ticket" to "Ticket de bomba", "ticketCar" to "Ticket Car", "odoCarga" to "Odómetro en la carga"

@@ -269,6 +269,9 @@ class MainActivity : AppCompatActivity() {
             else store.removeStop(d, index)
         }
 
+        @JavascriptInterface fun trackKm(date: String, from: Double, to: Double): Double =
+            Math.round(store.distanceKm(date.ifEmpty { Prefs.today() }, from.toLong(), if (to <= 0) Long.MAX_VALUE else to.toLong()) * 10) / 10.0
+
         @JavascriptInterface fun track(date: String): String =
             store.summary(date.ifEmpty { Prefs.today() }).put("active", prefs.tracking && prefs.trackDate == Prefs.today()).toString()
 
@@ -284,7 +287,7 @@ class MainActivity : AppCompatActivity() {
                             val it = list.getJSONObject(i); val slot = it.getString("slot")
                             val f = photos.marked(slot); if (!f.exists()) continue
                             val o = JSONObject().put("slot", slot)
-                                .put("name", "$date ${PhotoProcessor.LABELS[slot] ?: slot} - ${prefs.name}.jpg")
+                                .put("name", "$date ${PhotoProcessor.label(slot)} ${java.text.SimpleDateFormat("HHmm", java.util.Locale.US).format(java.util.Date(photos.readMeta(slot)?.time ?: System.currentTimeMillis()))} - ${prefs.name}.jpg")
                                 .put("b64", photos.b64(f))
                             if (it.optString("box").isNotEmpty() && photos.small(slot).exists()) o.put("box", it.getString("box")).put("small", photos.b64(photos.small(slot)))
                             arr.put(o)

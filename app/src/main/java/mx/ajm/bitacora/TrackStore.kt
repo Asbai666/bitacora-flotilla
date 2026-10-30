@@ -79,8 +79,8 @@ class TrackStore(private val ctx: Context) {
         l.removeAt(index); saveStops(date, l); return true
     }
 
-    fun distanceKm(date: String): Double {
-        val pts = points(date).filter { it.acc <= 40f }
+    fun distanceKm(date: String, from: Long = 0L, to: Long = Long.MAX_VALUE): Double {
+        val pts = points(date).filter { it.acc <= 40f && it.t in from..to }
         var d = 0.0
         for (i in 1 until pts.size) {
             val m = meters(pts[i - 1].lat, pts[i - 1].lon, pts[i].lat, pts[i].lon)
