@@ -77,7 +77,26 @@ function iso_(v) {
 function totalsRow_(sh) {
   const col = sh.getRange(CONFIG.FIRST_ROW, 2, sh.getMaxRows() - CONFIG.FIRST_ROW + 1, 1).getValues();
   for (let i = 0; i < col.length; i++) if (String(col[i][0]).trim().toUpperCase() === 'TOTAL') return CONFIG.FIRST_ROW + i;
-  throw new Error('No encontré la fila de TOTAL en la hoja Bitácora');
+  return rebuildTotals_(sh);
+}
+// Si alguien borró la fila de TOTAL, se vuelve a crear después del último registro (mínimo 28 filas de captura)
+function rebuildTotals_(sh) {
+  const f = CONFIG.FIRST_ROW, n = sh.getMaxRows() - f + 1;
+  const data = sh.getRange(f, 1, n, 15).getValues();
+  let last = f - 1;
+  data.forEach((r, i) => { if (rowFilled_(r)) last = f + i; });
+  const tot = Math.max(last + 1, f + 28);
+  if (tot + 1 > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), tot + 1 - sh.getMaxRows());
+  sh.getRange(tot, 2).setValue('TOTAL');
+  sh.getRange(tot, 6).setValue('KILOMETROS RECORRIDOS:');
+  sh.getRange(tot, 10).setValue('RENDIMIENTO (Km/Lt) =');
+  sh.getRange(tot + 1, 7).setValue('KILOMETRAJE FINAL - (MENOS) KILOMETRAJE INICIAL');
+  sh.getRange(tot + 1, 10).setValue('KILOMETROS RECORRIDOS / (ENTRE) LITROS');
+  sh.getRange(tot, 3).setFormula('=SUM(C' + f + ':C' + (tot - 1) + ')');
+  sh.getRange(tot, 4).setFormula('=SUM(D' + f + ':D' + (tot - 1) + ')');
+  sh.getRange(tot, 9).setFormula('=SUM(I' + f + ':I' + (tot - 1) + ')');
+  sh.getRange(tot, 13).setFormula('=IFERROR(I' + tot + '/D' + tot + ',0)');
+  return tot;
 }
 function lastRow_(sh) { return totalsRow_(sh) - 1; }
 
