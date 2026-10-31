@@ -75,14 +75,16 @@ class MainActivity : AppCompatActivity() {
             allowFileAccess = true
             textZoom = 100
         }
-        // siempre en modo claro
+        // el tablero tiene su propio tema oscuro
         if (Build.VERSION.SDK_INT >= 33) web.settings.isAlgorithmicDarkeningAllowed = false
         else if (Build.VERSION.SDK_INT >= 29) web.settings.forceDark = android.webkit.WebSettings.FORCE_DARK_OFF
+        web.setBackgroundColor(0xFF0B0F12.toInt())
         web.webChromeClient = WebChromeClient()
         web.addJavascriptInterface(Bridge(), "Android")
         web.loadUrl("file:///android_asset/index.html")
 
         if (prefs.tracking && prefs.trackDate == Prefs.today()) TrackingService.start(this)
+        else if (prefs.armed) TrackingService.arm(this)
         handleAlertIntent(intent)
     }
 
@@ -124,6 +126,7 @@ class MainActivity : AppCompatActivity() {
         put("battery", getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName))
         put("exactAlarm", Build.VERSION.SDK_INT < 31 || getSystemService(AlarmManager::class.java).canScheduleExactAlarms())
         put("media", Build.VERSION.SDK_INT < 29 || has(Manifest.permission.ACCESS_MEDIA_LOCATION))
+        put("background", Build.VERSION.SDK_INT < 29 || has(Manifest.permission.ACCESS_BACKGROUND_LOCATION))
     }
 
     private fun basePerms(): Array<String> {
@@ -171,6 +174,27 @@ class MainActivity : AppCompatActivity() {
                 if (lat is Double && lon is Double) r.put("address", withContext(Dispatchers.IO) { address(lat, lon) })
                 reply(cb, r.put("ok", true))
             } catch (e: Throwable) { fail(cb, e) }
+        }
+    }
+
+    /** Arma el KML del día o del mes. */
+    private fun kmlFor(scope: String): java.io.File? {
+        if (scope.length == 7) {
+            val days = store.daysOf(scope); if (days.isEmpty()) return null
+            val f = java.io.File(store.kmlFile(scope).parentFile, "Recorridos $scope.kml")
+            f.writeText(store.buildKml(days, "Recorridos $scope · ${prefs.name}", prefs.plates)); return f
+        }
+        val d = scope.ifEmpty { Prefs.today() }
+        if (store.points(d).isEmpty() && store.stops(d).isEmpty()) return null
+        val f = store.kmlFile(d); f.writeText(store.buildKml(d, prefs.name, prefs.plates)); return f
+    }
+
+    private fun openKml(f: java.io.File) {
+        val uri = FileProvider.getUriForFile(this, "mx.ajm.bitacora.files", f)
+        val i = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.google-earth.kml+xml").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try { startActivity(i) } catch (e: ActivityNotFoundException) {
+            try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.earth"))) }
+            catch (x: Exception) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=com.google.earth"))) }
         }
     }
 
@@ -248,6 +272,74 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface fun stopTracking() { TrackingService.stop(this@MainActivity) }
 
+        /** Graba solo cuando el vehículo salga del domicilio. */
+        @JavascriptInterface fun arm(cb: Int) = runOnUiThread {
+            ensure(basePerms()) {
+                when {
+                    !has(Manifest.permission.ACCESS_FINE_LOCATION) -> reply(cb, JSONObject().put("ok", false).put("error", "Sin permiso de ubicación no se puede detectar la salida."))
+                    !prefs.hasHome -> reply(cb, JSONObject().put("ok", false).put("error", "Primero guarda la ubicación de tu domicilio en Ajustes."))
+                    else -> reply(cb, JSONObject().put("ok", TrackingService.arm(this@MainActivity)))
+                }
+            }
+        }
+
+        @JavascriptInterface fun disarm() { TrackingService.disarm(this@MainActivity) }
+
+        /** Toma la ubicación actual como domicilio particular. */
+        @JavascriptInterface fun setHomeHere(cb: Int) = runOnUiThread {
+            ensure(basePerms()) {
+                lifecycleScope.launch {
+                    val l = currentLocation()
+                    if (l == null) { reply(cb, JSONObject().put("ok", false).put("error", "No se obtuvo la ubicación. Revisa que el GPS esté encendido.")); return@launch }
+                    val addr = withContext(Dispatchers.IO) { address(l.first, l.second) }
+                    prefs.homeLat = l.first; prefs.homeLon = l.second; prefs.homeAddr = addr
+                    reply(cb, JSONObject().put("ok", true).put("lat", l.first).put("lon", l.second).put("address", addr))
+                }
+            }
+        }
+
+        /** Dirección de unas coordenadas escritas a mano. */
+        @JavascriptInterface fun geocode(cb: Int, lat: Double, lon: Double) {
+            lifecycleScope.launch { reply(cb, JSONObject().put("ok", true).put("address", withContext(Dispatchers.IO) { address(lat, lon) })) }
+        }
+
+        @JavascriptInterface fun backgroundLocation() = runOnUiThread {
+            if (Build.VERSION.SDK_INT >= 29 && has(Manifest.permission.ACCESS_FINE_LOCATION))
+                ensure(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION)) { }
+            else ensure(basePerms()) { }
+        }
+
+        /** KML de un día ("2026-10-30") o de un mes ("2026-10"): lo guarda en Descargas y abre el menú para compartir. */
+        @JavascriptInterface fun shareKml(cb: Int, scope: String) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    val f = kmlFor(scope) ?: throw IllegalStateException("No hay recorridos grabados en ese periodo")
+                    val local = saveToDownloads(f.name, "application/vnd.google-earth.kml+xml", f.readBytes())
+                    val uri = FileProvider.getUriForFile(this@MainActivity, "mx.ajm.bitacora.files", f)
+                    val send = Intent(Intent.ACTION_SEND).setType("application/vnd.google-earth.kml+xml")
+                        .putExtra(Intent.EXTRA_STREAM, uri).putExtra(Intent.EXTRA_SUBJECT, f.name.removeSuffix(".kml"))
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    withContext(Dispatchers.Main) { startActivity(Intent.createChooser(send, "Compartir recorrido KML")) }
+                    reply(cb, JSONObject().put("ok", true).put("local", local ?: JSONObject.NULL).put("name", f.name))
+                } catch (e: Throwable) { fail(cb, e) }
+            }
+        }
+
+        @JavascriptInterface fun earthScope(scope: String) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                val f = try { kmlFor(scope) } catch (e: Exception) { null } ?: return@launch
+                withContext(Dispatchers.Main) { openKml(f) }
+            }
+        }
+
+        @JavascriptInterface fun monthDays(month: String): String {
+            val a = JSONArray()
+            store.daysOf(month).forEach { d ->
+                a.put(JSONObject().put("date", d).put("km", Math.round(store.distanceKm(d) * 10) / 10.0).put("stops", store.stops(d).size))
+            }
+            return a.toString()
+        }
+
         /** Parada manual en la ubicación actual. */
         @JavascriptInterface fun addStop(cb: Int, date: String) = runOnUiThread {
             ensure(basePerms()) {
@@ -324,13 +416,8 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface fun openEarth(date: String) = runOnUiThread {
             val d = date.ifEmpty { Prefs.today() }
             val f = store.kmlFile(d)
-            if (!f.exists()) f.writeText(store.buildKml(d, prefs.name, prefs.plates))
-            val uri = FileProvider.getUriForFile(this@MainActivity, "mx.ajm.bitacora.files", f)
-            val i = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.google-earth.kml+xml").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            try { startActivity(i) } catch (e: ActivityNotFoundException) {
-                try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.earth"))) }
-                catch (x: Exception) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=com.google.earth"))) }
-            }
+            f.writeText(store.buildKml(d, prefs.name, prefs.plates))
+            openKml(f)
         }
 
         @SuppressLint("BatteryLife")

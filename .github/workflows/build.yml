@@ -28,8 +28,8 @@ jobs:
       - name: Publicar descarga
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: Bitácora Flotilla 1.0.${{ github.run_number }}
-          body: APK para instalar en Android. Descarga BitacoraFlotilla.apk desde el celular.
+          tag_name: v2.0.${{ github.run_number }}
+          name: Bitácora Flotilla 2.0.${{ github.run_number }}
+          body: "v2.0 · tablero tipo medidor de combustible, domicilio y salida automática, paradas de 7 min en 150 m, registro de ajuste de odómetro y KML por día o mes. Descarga BitacoraFlotilla.apk desde el celular."
           files: BitacoraFlotilla.apk
           make_latest: true

@@ -13,7 +13,8 @@ class Prefs(ctx: Context) {
     private val p: SharedPreferences = ctx.getSharedPreferences("bitacora", Context.MODE_PRIVATE)
 
     init {
-        if (p.getInt("schema", 1) < 3) p.edit().putInt("stopMinutes", 5).putInt("schema", 3).apply()   // v1.3: paradas a los 5 min
+        // v2.0: una parada es quedarse 7 min dentro de 150 m
+        if (p.getInt("schema", 1) < 4) p.edit().putInt("stopMinutes", 7).putInt("stopRadius", 150).putInt("schema", 4).apply()
     }
 
     var scriptUrl: String
@@ -40,8 +41,41 @@ class Prefs(ctx: Context) {
         get() = p.getInt("workDays", 0b1111110)
         set(v) = p.edit().putInt("workDays", v).apply()
     var stopMinutes: Int
-        get() = p.getInt("stopMinutes", 5)
+        get() = p.getInt("stopMinutes", 7)
         set(v) = p.edit().putInt("stopMinutes", v).apply()
+    /** radio en metros dentro del cual el vehículo se considera detenido */
+    var stopRadius: Int
+        get() = p.getInt("stopRadius", 150)
+        set(v) = p.edit().putInt("stopRadius", v).apply()
+
+    // ---- domicilio particular ----
+    var homeLat: Double
+        get() = java.lang.Double.longBitsToDouble(p.getLong("homeLat", 0L))
+        set(v) = p.edit().putLong("homeLat", java.lang.Double.doubleToRawLongBits(v)).apply()
+    var homeLon: Double
+        get() = java.lang.Double.longBitsToDouble(p.getLong("homeLon", 0L))
+        set(v) = p.edit().putLong("homeLon", java.lang.Double.doubleToRawLongBits(v)).apply()
+    var homeAddr: String
+        get() = p.getString("homeAddr", "") ?: ""
+        set(v) = p.edit().putString("homeAddr", v.trim()).apply()
+    val hasHome: Boolean get() = p.contains("homeLat") && !(homeLat == 0.0 && homeLon == 0.0)
+
+    /** grabar solo al salir del domicilio (se arma con la alerta de inicio) */
+    var autoStart: Boolean
+        get() = p.getBoolean("autoStart", true)
+        set(v) = p.edit().putBoolean("autoStart", v).apply()
+    /** esperando que el vehículo salga del domicilio */
+    var armed: Boolean
+        get() = p.getBoolean("armed", false)
+        set(v) = p.edit().putBoolean("armed", v).apply()
+    /** hora en que se detectó la salida del domicilio (ms) y fecha */
+    var departedAt: Long
+        get() = p.getLong("departedAt", 0L)
+        set(v) = p.edit().putLong("departedAt", v).apply()
+    /** último km conocido en la hoja (para iniciar el día sin abrir la app) */
+    var lastKm: Double
+        get() = p.getFloat("lastKm", -1f).toDouble()
+        set(v) = p.edit().putFloat("lastKm", v.toFloat()).apply()
 
     // ---- estado del día ----
     var dayDate: String
@@ -83,6 +117,9 @@ class Prefs(ctx: Context) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("scriptUrl", scriptUrl); put("token", token); put("name", name); put("plates", plates)
         put("startAt", startAt); put("endAt", endAt); put("workDays", workDays); put("stopMinutes", stopMinutes)
+        put("stopRadius", stopRadius); put("autoStart", autoStart); put("armed", armed)
+        put("home", if (hasHome) JSONObject().put("lat", homeLat).put("lon", homeLon).put("address", homeAddr) else JSONObject.NULL)
+        put("departedAt", if (departedAt > 0 && today(departedAt) == today()) departedAt else 0L)
         put("today", today())
         put("day", JSONObject().apply {
             put("date", dayDate); put("started", dayStarted); put("ended", dayEnded); put("rest", dayRest)
@@ -99,10 +136,19 @@ class Prefs(ctx: Context) {
         if (o.has("endAt")) endAt = o.getInt("endAt")
         if (o.has("workDays")) workDays = o.getInt("workDays")
         if (o.has("stopMinutes")) stopMinutes = o.getInt("stopMinutes").coerceIn(1, 30)
+        if (o.has("stopRadius")) stopRadius = o.getInt("stopRadius").coerceIn(50, 500)
+        if (o.has("autoStart")) autoStart = o.getBoolean("autoStart")
+        if (o.has("lastKm") && !o.isNull("lastKm")) lastKm = o.getDouble("lastKm")
+        if (o.has("home")) {
+            val h = o.optJSONObject("home")
+            if (h == null) p.edit().remove("homeLat").remove("homeLon").remove("homeAddr").apply()
+            else { homeLat = h.getDouble("lat"); homeLon = h.getDouble("lon"); homeAddr = h.optString("address", "") }
+        }
     }
 
     companion object {
         const val DEFAULT_TOKEN = "hjS36zxuCyNVX7H2pNeZKx2Z"
         fun today(): String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        fun today(t: Long): String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(t))
     }
 }

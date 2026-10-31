@@ -33,7 +33,7 @@ object Alerts {
         nm.createNotificationChannel(NotificationChannel(CH_ALERT, "Alertas de bitácora", NotificationManager.IMPORTANCE_HIGH).apply {
             description = "Inicio y fin de jornada, vehículo detenido"
             enableVibration(true); vibrationPattern = VIBRATE
-            enableLights(true); lightColor = 0xFFE8A317.toInt()
+            enableLights(true); lightColor = 0xFFFFB020.toInt()
             setSound(
                 RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM) ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
                 AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
@@ -54,7 +54,7 @@ object Alerts {
         channels(ctx)
         val n = NotificationCompat.Builder(ctx, CH_ALERT)
             .setSmallIcon(R.drawable.ic_stat)
-            .setColor(0xFFE8A317.toInt())
+            .setColor(0xFFFFB020.toInt())
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
@@ -107,6 +107,11 @@ class AlarmReceiver : BroadcastReceiver() {
         val workDay = p.isWorkDay() && !p.dayRest
         when (intent.action) {
             Alerts.A_START -> {
+                // armar la grabación: empieza sola al salir del domicilio
+                if (workDay && !p.dayStarted && p.autoStart && p.hasHome && !p.armed && !(p.tracking && p.trackDate == Prefs.today()))
+                    TrackingService.arm(ctx)
+                val recording = p.tracking && p.trackDate == Prefs.today()
+                if (workDay && !p.dayStarted && (p.armed || recording)) { p.reminderCount = 0; Alerts.schedule(ctx); return }
                 if (workDay && !p.dayStarted) {
                     Alerts.alert(ctx, Alerts.ID_START, "Registra el inicio de jornada",
                         "Toma la foto del odómetro al salir para empezar a grabar el recorrido. Si hoy descansas, márcalo como día de descanso.", "start")
@@ -132,5 +137,6 @@ class BootReceiver : BroadcastReceiver() {
         Alerts.schedule(ctx)
         val p = Prefs(ctx)
         if (p.tracking && p.trackDate == Prefs.today()) TrackingService.start(ctx)
+        else if (p.armed) TrackingService.arm(ctx)
     }
 }

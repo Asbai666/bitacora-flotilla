@@ -103,38 +103,55 @@ class TrackStore(private val ctx: Context) {
     }
 
     // ---------- KML (Google Earth) ----------
-    fun buildKml(date: String, who: String, plates: String, odoKm: String = ""): String {
-        val pts = points(date).filter { it.acc <= 50f }
-        val st = stops(date)
+    fun buildKml(date: String, who: String, plates: String, odoKm: String = ""): String =
+        buildKml(listOf(date), "Recorrido $date · $who", plates, odoKm)
+
+    /** Días con recorrido grabado dentro de un mes "yyyy-MM". */
+    fun daysOf(month: String): List<String> =
+        (dir.listFiles() ?: emptyArray()).map { it.name }
+            .filter { it.startsWith(month) && it.endsWith(".csv") && !it.contains("stops") }
+            .map { it.removeSuffix(".csv") }.sorted()
+
+    fun buildKml(dates: List<String>, title: String, plates: String, odoKm: String = ""): String {
         val hm = SimpleDateFormat("HH:mm", Locale.US)
         val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
+        val totalKm = dates.sumOf { distanceKm(it) }
+        val totalStops = dates.sumOf { stops(it).size }
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
 <Document>
-<name>${esc("Recorrido $date · $who")}</name>
-<description>${esc("Vehículo $plates · ${"%.1f".format(Locale.US, distanceKm(date))} km por GPS" + (if (odoKm.isNotBlank()) " · $odoKm km por odómetro" else "") + " · ${st.size} paradas")}</description>
-<Style id="ruta"><LineStyle><color>ff17a3e8</color><width>5</width></LineStyle></Style>
-<Style id="parada"><IconStyle><color>ff2b37b4</color><scale>1.2</scale><Icon><href>http://maps.google.com/mapfiles/kml/paddle/red-circle.png</href></Icon></IconStyle></Style>
+<name>${esc(title)}</name>
+<description>${esc("Vehículo $plates · ${"%.1f".format(Locale.US, totalKm)} km por GPS" + (if (odoKm.isNotBlank()) " · $odoKm km por odómetro" else "") + " · $totalStops paradas")}</description>
+<Style id="ruta"><LineStyle><color>ff20b0ff</color><width>5</width></LineStyle></Style>
+<Style id="parada"><IconStyle><color>ff4f5aff</color><scale>1.2</scale><Icon><href>http://maps.google.com/mapfiles/kml/paddle/red-circle.png</href></Icon></IconStyle></Style>
 <Style id="inicio"><IconStyle><scale>1.2</scale><Icon><href>http://maps.google.com/mapfiles/kml/paddle/grn-circle.png</href></Icon></IconStyle></Style>
 <Style id="fin"><IconStyle><scale>1.2</scale><Icon><href>http://maps.google.com/mapfiles/kml/paddle/blu-circle.png</href></Icon></IconStyle></Style>
 """)
-        if (pts.isNotEmpty()) {
-            sb.append("<Placemark><name>Ruta del día</name><styleUrl>#ruta</styleUrl><gx:Track>\n")
-            pts.forEach { sb.append("<when>").append(iso.format(Date(it.t))).append("</when>\n") }
-            pts.forEach { sb.append("<gx:coord>${it.lon} ${it.lat} 0</gx:coord>\n") }
-            sb.append("</gx:Track></Placemark>\n")
-            sb.append("<Placemark><name>${esc("Inicio " + hm.format(Date(pts.first().t)))}</name><styleUrl>#inicio</styleUrl><Point><coordinates>${pts.first().lon},${pts.first().lat},0</coordinates></Point></Placemark>\n")
-            sb.append("<Placemark><name>${esc("Fin " + hm.format(Date(pts.last().t)))}</name><styleUrl>#fin</styleUrl><Point><coordinates>${pts.last().lon},${pts.last().lat},0</coordinates></Point></Placemark>\n")
+        dates.forEach { date ->
+            val pts = points(date).filter { it.acc <= 50f }
+            val st = stops(date)
+            val multi = dates.size > 1
+            if (multi) sb.append("<Folder><name>${esc("$date · ${"%.1f".format(Locale.US, distanceKm(date))} km · ${st.size} paradas")}</name>\n")
+            if (pts.isNotEmpty()) {
+                sb.append("<Placemark><name>${esc("Ruta " + date)}</name><styleUrl>#ruta</styleUrl><gx:Track>\n")
+                pts.forEach { sb.append("<when>").append(iso.format(Date(it.t))).append("</when>\n") }
+                pts.forEach { sb.append("<gx:coord>${it.lon} ${it.lat} 0</gx:coord>\n") }
+                sb.append("</gx:Track></Placemark>\n")
+                sb.append("<Placemark><name>${esc("Inicio " + hm.format(Date(pts.first().t)))}</name><styleUrl>#inicio</styleUrl><Point><coordinates>${pts.first().lon},${pts.first().lat},0</coordinates></Point></Placemark>\n")
+                sb.append("<Placemark><name>${esc("Fin " + hm.format(Date(pts.last().t)))}</name><styleUrl>#fin</styleUrl><Point><coordinates>${pts.last().lon},${pts.last().lat},0</coordinates></Point></Placemark>\n")
+            }
+            sb.append("<Folder><name>Paradas</name>\n")
+            st.forEachIndexed { i, s ->
+                val t = (if (s.manual) "Parada manual " else "Parada ") + "${i + 1} · ${hm.format(Date(s.start))}–${hm.format(Date(s.end))} (${s.minutes()} min)"
+                sb.append("<Placemark><name>${esc(t)}</name><description>${esc(s.address + "\n" + "%.6f, %.6f".format(Locale.US, s.lat, s.lon))}</description>")
+                sb.append("<TimeSpan><begin>${iso.format(Date(s.start))}</begin><end>${iso.format(Date(s.end))}</end></TimeSpan>")
+                sb.append("<styleUrl>#parada</styleUrl><Point><coordinates>${s.lon},${s.lat},0</coordinates></Point></Placemark>\n")
+            }
+            sb.append("</Folder>\n")
+            if (multi) sb.append("</Folder>\n")
         }
-        sb.append("<Folder><name>Paradas</name>\n")
-        st.forEachIndexed { i, s ->
-            val title = (if (s.manual) "Parada manual " else "Parada ") + "${i + 1} · ${hm.format(Date(s.start))}–${hm.format(Date(s.end))} (${s.minutes()} min)"
-            sb.append("<Placemark><name>${esc(title)}</name><description>${esc(s.address + "\n" + "%.6f, %.6f".format(Locale.US, s.lat, s.lon))}</description>")
-            sb.append("<TimeSpan><begin>${iso.format(Date(s.start))}</begin><end>${iso.format(Date(s.end))}</end></TimeSpan>")
-            sb.append("<styleUrl>#parada</styleUrl><Point><coordinates>${s.lon},${s.lat},0</coordinates></Point></Placemark>\n")
-        }
-        sb.append("</Folder>\n</Document>\n</kml>\n")
+        sb.append("</Document>\n</kml>\n")
         return sb.toString()
     }
 
@@ -162,10 +179,12 @@ class TrackStore(private val ctx: Context) {
 }
 
 /**
- * Detector de paradas: si el vehículo permanece dentro de RADIO metros durante
- * [minutes] minutos se abre una parada; al alejarse más de SALIDA metros se cierra.
+ * Detector de paradas: si el vehículo permanece dentro de [radius] metros durante
+ * [minutes] minutos se abre una parada; al alejarse más de radius + 50 m se cierra.
  */
-class StopDetector(private val minutes: Int) {
+class StopDetector(private val minutes: Int, radius: Int = 150) {
+    private val RADIO = radius.toDouble()
+    private val SALIDA = radius + 50.0
     var anchorLat = 0.0; var anchorLon = 0.0; var anchorT = 0L
     var lastInsideT = 0L
     var openIndex = -1          // índice de la parada abierta en la lista del día
@@ -216,5 +235,4 @@ class StopDetector(private val minutes: Int) {
         lastInsideT = o.optLong("in"); openIndex = o.optInt("open", -1); hasAnchor = o.optBoolean("has", false)
     }
 
-    companion object { const val RADIO = 100.0; const val SALIDA = 150.0 }
 }

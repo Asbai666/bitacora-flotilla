@@ -43,18 +43,67 @@ class TrackingService : Service() {
         }
     }
 
+    private var waiting = false
+
+    /** Mientras está armado: al alejarse del domicilio empieza a grabar el recorrido. */
+    private val armCallback = object : LocationCallback() {
+        override fun onLocationResult(r: LocationResult) {
+            val l = r.lastLocation ?: return
+            if (!prefs.armed || l.accuracy > 80f) return
+            val d = TrackStore.meters(prefs.homeLat, prefs.homeLon, l.latitude, l.longitude)
+            if (d > prefs.stopRadius + 50) departed(l.time)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun departed(t: Long) {
+        waiting = false
+        try { client.removeLocationUpdates(armCallback) } catch (e: Exception) { }
+        prefs.armed = false
+        prefs.departedAt = t
+        prefs.trackDate = Prefs.today(); prefs.tracking = true
+        store.stateFile().delete()
+        detector = StopDetector(prefs.stopMinutes, prefs.stopRadius)
+        date = prefs.trackDate
+        // el punto de partida es el domicilio
+        store.append(date, Pt(t - 1000, prefs.homeLat, prefs.homeLon, 5f, 0f))
+        Alerts.alert(this, Alerts.ID_START, "Saliste del domicilio: grabando recorrido",
+            "La jornada empezó a las " + SimpleDateFormat("HH:mm", Locale.US).format(Date(t)) + ". Toca para confirmar el km inicial con la foto del odómetro.", "departed")
+        MainActivity.emit("departed", JSONObject().put("t", t))
+        val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 10_000L)
+            .setMinUpdateIntervalMillis(5_000L).setWaitForAccurateLocation(false).build()
+        client.requestLocationUpdates(req, callback, Looper.getMainLooper())
+        ContextCompat.getSystemService(this, android.app.NotificationManager::class.java)?.notify(Alerts.ID_TRACK, notification("Grabando recorrido…"))
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         prefs = Prefs(this); store = TrackStore(this)
-        detector = StopDetector(prefs.stopMinutes)
+        detector = StopDetector(prefs.stopMinutes, prefs.stopRadius)
         Alerts.channels(this)
     }
 
     @SuppressLint("MissingPermission")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { finish(); return START_NOT_STICKY }
+        if (intent?.action == ACTION_ARM || (intent?.action == null && prefs.armed && !prefs.tracking)) {
+            if (!prefs.hasHome) { prefs.armed = false; stopSelf(); return START_NOT_STICKY }
+            prefs.armed = true
+            val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
+            try {
+                ServiceCompat.startForeground(this, Alerts.ID_TRACK, notification("Esperando la salida del domicilio…", "Listo para grabar"), type)
+            } catch (e: Exception) { prefs.armed = false; stopSelf(); return START_NOT_STICKY }
+            if (!waiting) {
+                waiting = true
+                try { client.removeLocationUpdates(callback) } catch (e: Exception) { }
+                val req = LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, 30_000L)
+                    .setMinUpdateIntervalMillis(15_000L).build()
+                client.requestLocationUpdates(req, armCallback, Looper.getMainLooper())
+            }
+            return START_STICKY
+        }
         if (date.isEmpty()) date = prefs.trackDate.ifEmpty { Prefs.today() }
         if (intent?.action == ACTION_MANUAL) {
             val lat = intent.getDoubleExtra("lat", 0.0); val lon = intent.getDoubleExtra("lon", 0.0)
@@ -87,6 +136,8 @@ class TrackingService : Service() {
             }
             return START_STICKY
         }
+        if (waiting) { waiting = false; try { client.removeLocationUpdates(armCallback) } catch (e: Exception) { } }
+        prefs.armed = false
         date = prefs.trackDate.ifEmpty { Prefs.today() }
         try { detector.restore(JSONObject(store.stateFile().readText())) } catch (e: Exception) { }
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
@@ -104,11 +155,15 @@ class TrackingService : Service() {
         val stops = store.stops(date)
         when (val ev = detector.feed(p, stops)) {
             is StopDetector.Event.Opened -> {
-                ev.stop.address = address(ev.stop.lat, ev.stop.lon)
+                val atHome = prefs.hasHome && TrackStore.meters(prefs.homeLat, prefs.homeLon, ev.stop.lat, ev.stop.lon) <= prefs.stopRadius
+                ev.stop.address = if (atHome) "Domicilio particular" + (if (prefs.homeAddr.isNotBlank()) " · " + prefs.homeAddr else "")
+                    else address(ev.stop.lat, ev.stop.lon)
                 store.saveStops(date, stops)
                 val hm = SimpleDateFormat("HH:mm", Locale.US).format(Date(ev.stop.start))
-                Alerts.alert(this, Alerts.ID_STOP, "Parada desde las $hm: nuevo registro",
-                    "Vehículo detenido${if (ev.stop.address.isNotEmpty()) " en " + ev.stop.address else ""}. Toca para guardarla en la bitácora y confirmar el km con la foto del odómetro y la del lugar.", "stop")
+                if (atHome) Alerts.alert(this, Alerts.ID_STOP, "Llegaste al domicilio a las $hm",
+                    "Se agregó el registro del último tramo. Toca para tomar la foto del odómetro y cerrar la jornada.", "home")
+                else Alerts.alert(this, Alerts.ID_STOP, "Parada desde las $hm: nuevo registro",
+                    "Vehículo detenido${if (ev.stop.address.isNotEmpty()) " en " + ev.stop.address else ""}. Toca para guardarla en la bitácora y confirmar el km con la foto del odómetro.", "stop")
             }
             is StopDetector.Event.Closed -> {
                 store.saveStops(date, stops)
@@ -136,10 +191,10 @@ class TrackingService : Service() {
         ).joinToString(", ")
     } catch (e: Exception) { "" }
 
-    private fun notification(text: String) = NotificationCompat.Builder(this, Alerts.CH_TRACK)
+    private fun notification(text: String, title: String = "Recorrido del día en curso") = NotificationCompat.Builder(this, Alerts.CH_TRACK)
         .setSmallIcon(R.drawable.ic_stat)
-        .setColor(0xFF0F4C5C.toInt())
-        .setContentTitle("Recorrido del día en curso")
+        .setColor(0xFFFFB020.toInt())
+        .setContentTitle(title)
         .setContentText(text)
         .setOngoing(true)
         .setOnlyAlertOnce(true)
@@ -148,6 +203,8 @@ class TrackingService : Service() {
 
     private fun finish() {
         try { client.removeLocationUpdates(callback) } catch (e: Exception) { }
+        try { client.removeLocationUpdates(armCallback) } catch (e: Exception) { }
+        waiting = false; prefs.armed = false
         io.execute {
             val stops = store.stops(date)
             if (detector.openIndex >= 0) {
@@ -163,6 +220,7 @@ class TrackingService : Service() {
 
     override fun onDestroy() {
         try { client.removeLocationUpdates(callback) } catch (e: Exception) { }
+        try { client.removeLocationUpdates(armCallback) } catch (e: Exception) { }
         super.onDestroy()
     }
 
@@ -170,6 +228,24 @@ class TrackingService : Service() {
         const val ACTION_STOP = "mx.ajm.bitacora.STOP_TRACKING"
         const val ACTION_MANUAL = "mx.ajm.bitacora.MANUAL_STOP"
         const val ACTION_REMOVE = "mx.ajm.bitacora.REMOVE_STOP"
+        const val ACTION_ARM = "mx.ajm.bitacora.ARM"
+
+        /** Espera a que el vehículo salga del domicilio para empezar a grabar. */
+        fun arm(ctx: Context): Boolean {
+            val p = Prefs(ctx)
+            if (!p.hasHome || (p.tracking && p.trackDate == Prefs.today())) return false
+            p.armed = true
+            return try {
+                ContextCompat.startForegroundService(ctx, Intent(ctx, TrackingService::class.java).setAction(ACTION_ARM)); true
+            } catch (e: Exception) { p.armed = false; false }
+        }
+
+        fun disarm(ctx: Context) {
+            val p = Prefs(ctx)
+            if (!p.armed) return
+            p.armed = false
+            if (!p.tracking) ctx.startService(Intent(ctx, TrackingService::class.java).setAction(ACTION_STOP))
+        }
 
         fun removeStop(ctx: Context, index: Int) {
             ctx.startService(Intent(ctx, TrackingService::class.java).setAction(ACTION_REMOVE).putExtra("index", index))

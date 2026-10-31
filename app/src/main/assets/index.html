@@ -3,133 +3,203 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="color-scheme" content="light">
+<meta name="color-scheme" content="dark">
 <title>Bitácora Flotilla</title>
 <style>
-/* Una columna para el celular: estado del día → paso actual (inicio / en ruta / cierre) → registros → ajustes. */
+/* Tablero de instrumentos: medidor de km del día, odómetro de rodillos y pantalla tipo bomba para las cargas. */
 :root{
-  --bg:#eef1f3; --surface:#ffffff; --ink:#14232c; --muted:#5b6b75; --line:#d3dbe0;
-  --petrol:#0f4c5c; --petrol-ink:#ffffff; --amber:#e8a317; --amber-soft:#fbefd2;
-  --ok:#1f7a4d; --ok-soft:#dcefe5; --bad:#b4372b; --bad-soft:#f6dedb; --rest:#5a4fb0; --rest-soft:#e7e4f7;
+  --bg:#0b0f12; --panel:#121920; --panel2:#18212a; --line:#25313b; --ink:#e9eef1; --muted:#8a9aa5; --dim:#5d6c76;
+  --fuel:#ffb020; --fuel-soft:rgba(255,176,32,.14); --led:#3ddc84; --led-soft:rgba(61,220,132,.13);
+  --bad:#ff5a4f; --bad-soft:rgba(255,90,79,.14); --rest:#9d8cff; --rest-soft:rgba(157,140,255,.15);
+  --lcd:#071a10; --lcd-ink:#59f29a;
   --display:"sans-serif-condensed","Roboto Condensed","Arial Narrow",sans-serif;
   --body:Roboto,system-ui,sans-serif;
-  --mono:"Roboto Mono",monospace;
+  --mono:"Roboto Mono","DejaVu Sans Mono",monospace;
 }
-:root{color-scheme:light}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0}
-body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45}
-.wrap{max-width:640px;margin:0 auto;padding:14px 16px 60px;display:grid;gap:16px}
-header{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap}
-h1{font-family:var(--display);font-weight:700;font-size:28px;margin:0;line-height:1}
-.sub{color:var(--muted);font-size:13px;margin-top:3px}
-.plate{font-family:var(--mono);font-size:13px;border:2px solid var(--ink);border-radius:4px;padding:2px 8px;letter-spacing:.08em;background:var(--surface)}
-.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;border-radius:999px;padding:4px 10px}
-.pill.idle{background:var(--amber-soft);color:var(--ink)}
-.pill.run{background:var(--ok-soft);color:var(--ok)}
-.pill.run::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--ok);animation:pulse 1.4s infinite}
-.pill.closed{background:var(--line);color:var(--ink)}
-.pill.rest{background:var(--rest-soft);color:var(--rest)}
+html,body{margin:0;background:var(--bg)}
+body{color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;
+  background:radial-gradient(120% 60% at 50% -10%,#1a2530 0%,var(--bg) 60%) fixed}
+.wrap{max-width:640px;margin:0 auto;padding:12px 16px calc(92px + env(safe-area-inset-bottom,0px));display:grid;gap:14px}
+[hidden]{display:none!important}
+
+/* ---- encabezado ---- */
+header{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.brand svg{width:34px;height:34px;flex:none}
+h1{font-family:var(--display);font-weight:700;font-size:21px;margin:0;line-height:1;letter-spacing:.06em;text-transform:uppercase}
+.sub{color:var(--muted);font-size:12px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hd-r{display:grid;justify-items:end;gap:6px}
+.plate{font-family:var(--mono);font-size:12px;border:1.5px solid var(--ink);border-radius:4px;padding:1px 7px;letter-spacing:.1em;background:#f2f4f5;color:#111}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:4px 10px;border:1px solid var(--line);background:var(--panel);white-space:nowrap}
+.pill::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--dim)}
+.pill.idle::before{background:var(--fuel)}
+.pill.run{color:var(--led);border-color:rgba(61,220,132,.4)}
+.pill.run::before{background:var(--led);box-shadow:0 0 8px var(--led);animation:pulse 1.4s infinite}
+.pill.armed{color:var(--fuel);border-color:rgba(255,176,32,.45)}
+.pill.armed::before{background:var(--fuel);animation:pulse 1.4s infinite}
+.pill.rest{color:var(--rest)} .pill.rest::before{background:var(--rest)}
 @keyframes pulse{50%{opacity:.25}}
-.banner{border-radius:10px;padding:12px 14px;display:grid;gap:8px;font-size:14px}
-.banner b{font-size:15px}
-.banner.alert{background:var(--amber);color:#1b1404;animation:flash 1s 3}
-.banner.bad{background:var(--bad-soft);color:var(--bad)}
-.banner.ok{background:var(--ok-soft);color:var(--ok)}
-.banner.info{background:var(--surface);border:1px solid var(--line);color:var(--muted)}
-@keyframes flash{50%{filter:brightness(1.25)}}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:grid;gap:14px}
-h2{font-family:var(--display);font-weight:600;font-size:22px;margin:0}
-h3{margin:0;font-size:13px;text-transform:uppercase;letter-spacing:.09em;color:var(--petrol)}
+
+/* ---- tablero ---- */
+.cluster{position:relative;background:linear-gradient(180deg,#141d25,#0e1419);border:1px solid var(--line);border-radius:22px;padding:14px 14px 12px;display:grid;gap:10px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 30px rgba(0,0,0,.35)}
+.gauge{position:relative;width:100%;max-width:340px;margin:0 auto}
+.gauge svg{width:100%;display:block}
+.gauge .read{text-align:center;margin-top:-4px}
+.gauge .read .v{font-family:var(--display);font-weight:700;font-size:40px;line-height:1;letter-spacing:.02em}
+.gauge .read .k{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+#needle{transition:transform .9s cubic-bezier(.3,1.4,.5,1);transform-origin:160px 160px}
+.odo-row{display:flex;justify-content:center;align-items:center;gap:10px}
+.odo-row .k{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.drums{display:flex;gap:2px;padding:3px;background:#000;border-radius:6px;border:1px solid #2c3a44;box-shadow:inset 0 2px 6px rgba(0,0,0,.8)}
+.drums span{font-family:var(--mono);font-size:20px;font-weight:700;width:1.05em;text-align:center;color:#f4f4f4;border-radius:2px;
+  background:linear-gradient(180deg,#0a0a0a 0%,#2a2f33 45%,#2a2f33 55%,#0a0a0a 100%)}
+.drums span.dec{background:linear-gradient(180deg,#3a0b08 0%,#8a1d15 45%,#8a1d15 55%,#3a0b08 100%)}
+.drums.empty span{color:var(--dim)}
+.minis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.mini{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:8px 10px;min-width:0}
+.mini .k{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.mini .v{font-family:var(--mono);font-size:17px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini .v small{font-size:11px;color:var(--muted);font-weight:400}
+.status{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);justify-content:center;text-align:center;flex-wrap:wrap}
+.status b{color:var(--ink);font-weight:600}
+.status.warn{color:var(--bad)}
+
+/* ---- tarjetas ---- */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;display:grid;gap:14px}
+h2{font-family:var(--display);font-weight:700;font-size:20px;margin:0;letter-spacing:.03em;text-transform:uppercase}
+h3{margin:0;font-size:11.5px;text-transform:uppercase;letter-spacing:.14em;color:var(--fuel)}
 .row2{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
-label{display:grid;gap:4px;font-size:13px;color:var(--muted);min-width:0}
-input,select{font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 11px;width:100%;min-width:0}
-input:focus{outline:2px solid var(--petrol);outline-offset:1px}
+label{display:grid;gap:5px;font-size:12.5px;color:var(--muted);min-width:0}
+input,select{font:inherit;font-size:16px;color:var(--ink);background:#0d1318;border:1px solid var(--line);border-radius:10px;padding:11px 12px;width:100%;min-width:0;color-scheme:dark}
+input:focus{outline:2px solid var(--fuel);outline-offset:0;border-color:transparent}
 input.num{font-family:var(--mono)}
-input.auto{border-color:var(--amber);background:var(--amber-soft)}
+input.auto{border-color:var(--fuel);background:var(--fuel-soft)}
 input.bad{border-color:var(--bad);background:var(--bad-soft)}
-button{font:inherit;font-weight:600;border-radius:9px;padding:12px 16px;border:1px solid transparent;cursor:pointer}
-button:disabled{opacity:.5}
-.primary{background:var(--petrol);color:var(--petrol-ink)}
-.big{width:100%;padding:16px;font-size:17px}
-.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+button{font:inherit;font-weight:700;border-radius:12px;padding:12px 16px;border:1px solid transparent;cursor:pointer;color:var(--ink);letter-spacing:.02em}
+button:disabled{opacity:.45}
+.primary{background:var(--fuel);color:#1b1203}
+.go{background:var(--led);color:#04210f}
+.big{width:100%;padding:17px;font-size:16.5px;text-transform:uppercase;letter-spacing:.06em;font-family:var(--display)}
+.ghost{background:transparent;border-color:var(--line)}
 .warnbtn{background:var(--rest-soft);color:var(--rest)}
 .danger{background:transparent;color:var(--bad);border-color:var(--bad)}
-.small{padding:7px 11px;font-size:13px}
+.small{padding:8px 12px;font-size:13px;border-radius:10px}
 .actions{display:flex;gap:8px;flex-wrap:wrap}
 .actions>*{flex:1 1 auto}
 .hint{font-size:12.5px;color:var(--muted)}
 .err{color:var(--bad);font-size:13px}
-.shot{display:grid;gap:8px;border:1px dashed var(--line);border-radius:10px;padding:10px;background:var(--bg)}
-.shot.has{border-style:solid;background:var(--surface)}
-.shot .t{display:flex;justify-content:space-between;gap:8px;font-weight:600;font-size:14px}
-.shot .t span{font-weight:400;color:var(--muted);font-size:12px}
-.shot img{width:100%;border-radius:6px;display:block}
-.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:13px}
+.note{border-radius:12px;padding:10px 12px;font-size:13px;display:grid;gap:8px}
+.note.fuel{background:var(--fuel-soft);border:1px solid rgba(255,176,32,.35)}
+.note.bad{background:var(--bad-soft);border:1px solid rgba(255,90,79,.4);color:#ffd2ce}
+.note.led{background:var(--led-soft);border:1px solid rgba(61,220,132,.35)}
+.check{display:flex;gap:10px;align-items:flex-start;color:var(--ink);font-size:13.5px}
+.check input{width:20px;height:20px;flex:none;margin-top:1px;accent-color:var(--fuel)}
+
+/* ---- avisos ---- */
+.banner{border-radius:14px;padding:12px 14px;display:grid;gap:8px;font-size:13.5px;border:1px solid var(--line);background:var(--panel)}
+.banner b{font-size:15px}
+.banner.alert{background:var(--fuel);color:#1b1203;border-color:transparent;animation:flash 1s 3}
+.banner.alert .ghost{border-color:rgba(0,0,0,.3);color:#1b1203}
+.banner.bad{background:var(--bad-soft);border-color:rgba(255,90,79,.4);color:#ffd2ce}
+.banner.ok{background:var(--led-soft);border-color:rgba(61,220,132,.35);color:#c9f7dc}
+@keyframes flash{50%{filter:brightness(1.2)}}
+
+/* ---- fotos ---- */
+.shot{display:grid;gap:8px;border:1px dashed var(--line);border-radius:12px;padding:10px;background:#0d1318}
+.shot.has{border-style:solid}
+.shot .t{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.shot .t span:first-child{font-weight:700;font-size:14px}
+.shot .t span:last-child{color:var(--muted);font-size:11.5px;text-align:right}
+.shot img{width:100%;border-radius:8px;display:block}
+.shot .read{font-family:var(--mono);font-size:22px;color:var(--fuel);text-align:center;letter-spacing:.06em}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:12.5px;margin:0}
 .kv dt{color:var(--muted)} .kv dd{margin:0;text-align:right;font-family:var(--mono);overflow-wrap:anywhere}
-.odo{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.digits{display:flex;gap:2px}
-.digits span{font-family:var(--mono);background:var(--ink);color:var(--surface);padding:2px 6px;border-radius:3px;font-size:20px;min-width:1.3em;text-align:center}
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-radius:10px;overflow:hidden;border:1px solid var(--line)}
-.stat{background:var(--surface);padding:9px 10px;min-width:0}
-.stat .k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
-.stat .v{font-family:var(--mono);font-size:17px;white-space:nowrap}
-.stops{display:grid;gap:0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
-.stop{display:grid;grid-template-columns:auto 1fr auto;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);background:var(--surface);font-size:13px;align-items:center}
-.stop:last-child{border-bottom:0}
-.stop .n{font-family:var(--mono);background:var(--bad-soft);color:var(--bad);border-radius:50%;width:24px;height:24px;display:grid;place-items:center;font-size:12px}
-.stop .a{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.stop .m{font-family:var(--mono);color:var(--muted)}
-.list{display:grid;border:1px solid var(--line);border-radius:10px;overflow:hidden}
-.rec{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:11px 12px;background:var(--surface);border:0;border-bottom:1px solid var(--line);text-align:left;font-weight:400;border-radius:0;color:var(--ink);width:100%}
+.choice{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+/* ---- tramos (paradas) ---- */
+.legs{display:grid;gap:0;position:relative}
+.leg{display:grid;grid-template-columns:28px 1fr auto;gap:10px;padding:10px 0;align-items:start;position:relative}
+.leg::before{content:"";position:absolute;left:13px;top:0;bottom:0;width:2px;background:var(--line)}
+.leg:first-child::before{top:18px} .leg:last-child::before{bottom:calc(100% - 18px)}
+.leg .n{position:relative;z-index:1;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-family:var(--mono);font-size:12px;font-weight:700;background:var(--panel2);border:2px solid var(--fuel);color:var(--fuel)}
+.leg.home .n{border-color:var(--led);color:var(--led)}
+.leg.start .n{border-color:var(--led);background:var(--led);color:#04210f}
+.leg .a{min-width:0;font-size:13.5px}
+.leg .a .ttl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.leg .m{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right;white-space:pre}
+.leg .km{color:var(--fuel);font-size:13px}
+.tag{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:var(--fuel-soft);color:var(--fuel);border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:1px}
+.tag.ok{background:var(--led-soft);color:var(--led)}
+.x{background:transparent;border:1px solid var(--line);color:var(--muted);padding:4px 9px;font-size:12px;border-radius:8px;font-weight:600}
+.x.armed{border-color:var(--bad);color:var(--bad)}
+.empty{padding:16px;text-align:center;color:var(--muted);font-size:13px}
+
+/* ---- pantalla tipo bomba ---- */
+.pump{background:#050807;border:2px solid #26332c;border-radius:14px;padding:10px 12px;display:grid;gap:6px;box-shadow:inset 0 0 18px rgba(0,0,0,.9)}
+.pump .r{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.pump .k{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#6fae8a}
+.pump .v{font-family:var(--mono);font-size:26px;font-weight:700;color:var(--lcd-ink);text-shadow:0 0 10px rgba(89,242,154,.45);letter-spacing:.06em}
+.pump .v.s{font-size:18px}
+details{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+summary{font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px;list-style:none}
+summary::-webkit-details-marker{display:none}
+summary svg{width:20px;height:20px;stroke:var(--fuel);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+details[open] summary{margin-bottom:12px}
+details .card{border:0;padding:0;background:transparent}
+.cmp{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.cmp>div{background:#0d1318;border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.cmp .k{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.cmp .v{font-family:var(--mono);font-size:15px}
+.cmp .v.warn{color:var(--bad)}
+.sep{border-top:1px solid var(--line);padding-top:14px;display:grid;gap:12px}
+
+/* ---- registros ---- */
+.list{display:grid;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--panel)}
+.rec{display:grid;grid-template-columns:44px 1fr auto;gap:10px;align-items:center;padding:11px 12px;background:transparent;border:0;border-bottom:1px solid var(--line);text-align:left;font-weight:400;border-radius:0;width:100%}
 .rec:last-child{border-bottom:0}
-.rec .d{font-family:var(--mono);font-size:13px;color:var(--muted)}
-.rec .t{min-width:0} .rec .t b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rec .t span{font-size:12.5px;color:var(--muted);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rec .d{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;line-height:1.2}
+.rec .d b{display:block;font-size:17px;color:var(--ink)}
+.rec .t{min-width:0} .rec .t b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
+.rec .t span{font-size:12px;color:var(--muted);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rec .m{text-align:right;font-family:var(--mono);font-size:13px}
 .rec.restday .t b{color:var(--rest)}
-.fuel{display:inline-block;background:var(--amber-soft);border-radius:4px;padding:0 5px;font-size:12px}
-.empty{padding:16px;text-align:center;color:var(--muted);background:var(--surface)}
-details{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
-summary{font-weight:600;cursor:pointer}
-details[open] summary{margin-bottom:12px}
-details .card{border:0;padding:0}
-.perm{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px;padding:6px 0;border-bottom:1px solid var(--line)}
+.rec.adj .t b{color:var(--fuel)}
+.fuelchip{display:inline-block;background:var(--fuel-soft);color:var(--fuel);border-radius:4px;padding:0 5px;font-size:11.5px}
+.daykml{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
+.daykml:last-child{border-bottom:0}
+.daykml .m{font-family:var(--mono);color:var(--muted)}
+
+/* ---- ajustes ---- */
+.perm{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13.5px;padding:7px 0;border-bottom:1px solid var(--line)}
 .perm:last-child{border-bottom:0}
-.perm .s{font-size:12px;font-weight:600}
-.perm .s.y{color:var(--ok)} .perm .s.n{color:var(--bad)}
+.perm .s{font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.perm .s.y{color:var(--led)}
 .days{display:flex;gap:6px;flex-wrap:wrap}
-.days label{display:flex;align-items:center;gap:4px;background:var(--bg);border-radius:6px;padding:6px 8px;color:var(--ink)}
-.days input{width:auto}
-.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:grid;align-items:end;z-index:20}
-.sheet{background:var(--bg);border-radius:16px 16px 0 0;max-height:92vh;overflow:auto;padding:16px 16px 28px;display:grid;gap:14px}
-.choice{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-[hidden]{display:none!important}
-.wrap{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
-.tabs{position:fixed;left:0;right:0;bottom:0;z-index:15;display:grid;grid-template-columns:repeat(3,1fr);background:var(--surface);border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px))}
-.tabs button{background:transparent;color:var(--muted);border:0;border-radius:10px;padding:8px 4px;display:grid;justify-items:center;gap:2px;font-size:12.5px;font-weight:600}
+.days label{display:flex;align-items:center;gap:5px;background:#0d1318;border:1px solid var(--line);border-radius:8px;padding:7px 9px;color:var(--ink)}
+.days input{width:auto;accent-color:var(--fuel)}
+.homebox{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;background:#0d1318;border:1px solid var(--line);border-radius:12px;padding:12px}
+.homebox svg{width:30px;height:30px;stroke:var(--led);fill:none;stroke-width:2;stroke-linejoin:round}
+.homebox.none svg{stroke:var(--dim)}
+
+/* ---- hoja inferior y pestañas ---- */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:grid;align-items:end;z-index:20}
+.sheet{background:var(--panel);border-top:1px solid var(--line);border-radius:20px 20px 0 0;max-height:92vh;overflow:auto;padding:16px 16px calc(28px + env(safe-area-inset-bottom,0px));display:grid;gap:14px;max-width:640px;width:100%;margin:0 auto}
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:15;display:grid;grid-template-columns:repeat(3,1fr);background:rgba(13,18,22,.96);border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px))}
+.tabs button{background:transparent;color:var(--muted);border:0;border-radius:12px;padding:8px 4px;display:grid;justify-items:center;gap:2px;font-size:12px;font-weight:700;letter-spacing:.04em}
 .tabs button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.tabs button[aria-selected="true"]{color:var(--petrol);background:var(--bg)}
-.tabs .dot{position:absolute;margin-left:18px;width:8px;height:8px;border-radius:50%;background:var(--bad)}
-.cmp{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
-.cmp div{background:var(--surface);padding:8px 10px}
-.cmp .k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
-.cmp .v{font-family:var(--mono);font-size:16px}
-.cmp .v.warn{color:var(--bad)}
-.stop .x{background:transparent;border:1px solid var(--line);color:var(--muted);padding:4px 8px;font-size:12px;border-radius:6px}
-.stop .x.armed{border-color:var(--bad);color:var(--bad)}
-.stop .tag{font-size:10.5px;background:var(--amber-soft);border-radius:4px;padding:0 4px;margin-left:4px}
+.tabs button[aria-selected="true"]{color:var(--fuel);background:var(--fuel-soft)}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <div>
-      <h1>Bitácora Flotilla</h1>
-      <div class="sub" id="who">—</div>
+    <div class="brand">
+      <svg viewBox="0 0 34 34" aria-hidden="true"><rect x="1" y="1" width="32" height="32" rx="9" fill="#121920" stroke="#25313b"/><path d="M8 23a9 9 0 1 1 18 0" fill="none" stroke="#3a4750" stroke-width="3" stroke-linecap="round"/><path d="M8 23a9 9 0 0 1 1.2-4.5" fill="none" stroke="#ff5a4f" stroke-width="3" stroke-linecap="round"/><path d="M26 23a9 9 0 0 0-3.6-7.2" fill="none" stroke="#ffb020" stroke-width="3" stroke-linecap="round"/><path d="M16.2 22.4 22.5 15.8 17.8 23.6z" fill="#ffb020"/><circle cx="17" cy="23" r="2" fill="#fff"/></svg>
+      <div style="min-width:0"><h1>Bitácora Flotilla</h1><div class="sub" id="who">—</div></div>
     </div>
-    <div style="display:grid;justify-items:end;gap:6px">
+    <div class="hd-r">
       <span class="plate" id="plate" hidden></span>
       <span class="pill idle" id="dayPill">Sin iniciar</span>
     </div>
@@ -137,50 +207,89 @@ details .card{border:0;padding:0}
 
   <div id="banners" style="display:grid;gap:8px"></div>
 
-  <div id="tab-hoy" role="tabpanel" style="display:grid;gap:16px">
+  <div id="tab-hoy" role="tabpanel" style="display:grid;gap:14px">
+  <!-- Tablero -->
+  <section class="cluster" id="cluster" aria-label="Tablero del día">
+    <div class="gauge">
+      <svg viewBox="0 0 320 190" aria-hidden="true">
+        <defs>
+          <linearGradient id="arcg" x1="0" x2="1"><stop offset="0" stop-color="#ff5a4f"/><stop offset=".25" stop-color="#ffb020"/><stop offset="1" stop-color="#3ddc84"/></linearGradient>
+        </defs>
+        <path d="M30 160 A130 130 0 0 1 290 160" fill="none" stroke="#1d2730" stroke-width="16" stroke-linecap="round"/>
+        <path id="arcFill" d="M30 160 A130 130 0 0 1 290 160" fill="none" stroke="url(#arcg)" stroke-width="16" stroke-linecap="round" pathLength="100" stroke-dasharray="0 100"/>
+        <g id="ticks"></g>
+        <g id="needle"><path d="M156 160 L160 46 L164 160 Z" fill="#ffb020"/><circle cx="160" cy="160" r="13" fill="#0e1419" stroke="#ffb020" stroke-width="3"/><circle cx="160" cy="160" r="4" fill="#fff"/></g>
+        <text x="30" y="186" fill="#8a9aa5" font-size="13" text-anchor="middle" font-family="monospace" id="gMin">0</text>
+        <text x="290" y="186" fill="#8a9aa5" font-size="13" text-anchor="middle" font-family="monospace" id="gMax">100</text>
+      </svg>
+      <div class="read"><div class="v" id="gKm">0.0</div><div class="k">km recorridos hoy · GPS</div></div>
+    </div>
+    <div class="odo-row"><span class="k">Odómetro</span><span class="drums empty" id="gEst"><span>-</span><span>-</span><span>-</span><span>-</span><span>-</span><span>-</span></span><span class="k">km</span></div>
+    <div class="minis">
+      <div class="mini"><div class="k">Paradas</div><div class="v" id="gStops">0</div></div>
+      <div class="mini"><div class="k">En ruta</div><div class="v" id="gTime">—</div></div>
+      <div class="mini"><div class="k">Rend. mes</div><div class="v" id="gRend">—</div></div>
+    </div>
+    <div class="status" id="gStatus">Sin grabar</div>
+  </section>
+
   <!-- Primera vez: conectar con la hoja -->
   <section class="card" id="setup" hidden>
     <h2>Conecta tu hoja</h2>
-    <p class="hint">La app escribe en “Bitácora Flotilla” por medio de un pequeño servicio de Google que se instala una sola vez desde la hoja. Pega aquí la dirección que termina en <b>/exec</b>.</p>
+    <p class="hint">La app escribe en “Bitácora Flotilla” por medio de un pequeño servicio de Google que se instala una sola vez desde la hoja (Extensiones → Apps Script). Pega aquí la dirección que termina en <b>/exec</b>.</p>
     <label>Dirección del servicio<input id="cfgUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></label>
     <div class="actions"><button class="primary" id="cfgSave">Probar y guardar</button></div>
   </section>
 
   <!-- Paso: inicio -->
   <section class="card" id="stepStart" hidden>
-    <div class="row2"><h2>Inicio de jornada</h2><span class="hint" id="startWhen"></span></div>
+    <div class="row2"><h2>Arranque del día</h2><span class="hint" id="startWhen"></span></div>
+    <div class="note led" id="armBox" hidden>
+      <b>Esperando la salida del domicilio</b>
+      <div>El GPS empieza a grabar solo cuando el vehículo se aleje del domicilio. Puedes cerrar la app.</div>
+      <div class="actions"><button class="ghost small" id="btnDisarm">Cancelar espera</button></div>
+    </div>
+    <div class="note fuel" id="homeHint" hidden>
+      <div>Define tu <b>domicilio particular</b> para que cada día salga de ahí y la grabación empiece sola al salir.</div>
+      <div class="actions"><button class="primary small" id="btnHomeHere">Estoy en mi domicilio: guardar ubicación</button></div>
+    </div>
     <div id="shot-ini"></div>
     <div class="grid">
-      <label>Km inicial<input class="num" type="number" inputmode="numeric" id="kmIni"></label>
+      <label>Km inicial (odómetro)<input class="num" type="number" inputmode="numeric" id="kmIni"></label>
       <label>Fecha<input type="date" id="fTras"></label>
     </div>
-    <label>Sale de (dirección)<input id="de" placeholder="Calle, colonia, municipio"></label>
+    <div class="note fuel" id="gapBox" hidden></div>
+    <label>Sale de<input id="de" placeholder="Domicilio particular"></label>
     <label>Coordenadas de salida<input class="num" id="deC" placeholder="19.829600, -99.207200"></label>
     <label>Asunto del día<input id="asunto" placeholder="Supervisión de OS, soporte en campo…"></label>
     <div class="err" id="startErr" hidden></div>
-    <button class="primary big" id="btnStart">Iniciar jornada y grabar recorrido</button>
-    <button class="warnbtn" id="btnRest">Hoy es día de descanso</button>
+    <button class="go big" id="btnStart">Iniciar jornada y grabar</button>
+    <div class="actions">
+      <button class="ghost" id="btnArm">Grabar al salir de casa</button>
+      <button class="warnbtn" id="btnRest">Día de descanso</button>
+    </div>
   </section>
 
   <!-- Paso: en ruta -->
   <section class="card" id="stepRun" hidden>
     <div class="row2"><h2>En ruta</h2><span class="hint" id="runSince"></span></div>
-    <div class="stats">
-      <div class="stat"><div class="k">Recorrido GPS</div><div class="v" id="gKm">0.0</div></div>
-      <div class="stat"><div class="k">Odómetro est.</div><div class="v" id="gEst">—</div></div>
-      <div class="stat"><div class="k">Paradas</div><div class="v" id="gStops">0</div></div>
-    </div>
     <p class="hint" id="gIni"></p>
-    <div id="gpsWarn" class="err" hidden></div>
-    <div class="row2"><h3 id="stopsTitle">Paradas</h3><button class="primary small" id="btnAddStop">Agregar parada aquí</button></div>
-    <div class="stops" id="stopList"><div class="empty">Aún no hay paradas. Se registran solas cuando el vehículo se queda quieto.</div></div>
+    <div id="gpsWarn" class="note bad" hidden></div>
+    <div class="row2"><h3 id="stopsTitle">Tramos del día</h3><button class="primary small" id="btnAddStop">+ Parada aquí</button></div>
+    <div class="legs" id="stopList"></div>
     <div class="actions">
-      <button class="ghost small" id="btnEarth">Ver recorrido en Google Earth</button>
+      <button class="ghost small" id="btnEarth">Ver en Google Earth</button>
+      <button class="ghost small" id="btnShareKml">Exportar KML</button>
     </div>
 
     <details id="cargaBox">
-      <summary>Registrar carga de combustible</summary>
+      <summary><svg viewBox="0 0 24 24"><path d="M4 21V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v16"/><path d="M3 21h13"/><path d="M15 9h2a2 2 0 0 1 2 2v6a1.5 1.5 0 0 0 3 0V8l-3-3"/><path d="M7 7h5v4H7z"/></svg>Registrar carga de combustible</summary>
       <div class="card">
+        <div class="pump" aria-live="polite">
+          <div class="r"><span class="k">Importe $</span><span class="v" id="pImp">0.00</span></div>
+          <div class="r"><span class="k">Litros</span><span class="v" id="pLit">0.000</span></div>
+          <div class="r"><span class="k">Precio / L</span><span class="v s" id="pPre">—</span></div>
+        </div>
         <div id="shot-ticket"></div>
         <div id="shot-ticketCar"></div>
         <div id="shot-odoCarga"></div>
@@ -198,22 +307,23 @@ details .card{border:0;padding:0}
       </div>
     </details>
 
-    <div style="display:grid;gap:12px;border-top:1px solid var(--line);padding-top:14px">
+    <div class="sep" id="endBox">
       <h3>Fin de jornada</h3>
       <p class="hint">Cierra el último tramo: desde la última parada hasta donde termina el día.</p>
       <div id="shot-fin"></div>
       <div class="grid">
         <label>Km final<input class="num" type="number" inputmode="numeric" id="kmFin"></label>
-        <div class="odo"><span class="hint">Recorrido</span><span class="digits" id="odo"><span>0</span></span><span class="hint">km</span></div>
+        <div style="display:grid;gap:5px"><span class="hint">Tramo por odómetro</span><span class="drums" id="odo"><span>0</span></span></div>
       </div>
       <div class="cmp" id="cmp">
-        <div><div class="k">Por odómetro</div><div class="v" id="cOdo">—</div></div>
-        <div><div class="k">GPS del tramo</div><div class="v" id="cGps">—</div></div>
+        <div><div class="k">Odómetro</div><div class="v" id="cOdo">—</div></div>
+        <div><div class="k">GPS tramo</div><div class="v" id="cGps">—</div></div>
         <div><div class="k">Diferencia</div><div class="v" id="cDif">—</div></div>
       </div>
       <button class="ghost small" id="btnUseGps" hidden>Usar km final estimado por GPS</button>
-      <label>Llega a (dirección)<input id="a" placeholder="Calle, colonia, municipio"></label>
+      <label>Llega a<input id="a" placeholder="Domicilio particular"></label>
       <label>Coordenadas de llegada<input class="num" id="aC" placeholder="19.784100, -99.193200"></label>
+      <button class="ghost small" id="btnArriveHome" hidden>Llegué a mi domicilio</button>
       <div class="err" id="endErr" hidden></div>
       <button class="primary big" id="btnEnd">Terminar jornada y guardar</button>
     </div>
@@ -224,22 +334,51 @@ details .card{border:0;padding:0}
     <h2 id="doneTitle">Día cerrado</h2>
     <p class="hint" id="doneText"></p>
     <div class="actions">
-      <button class="ghost" id="btnEarth2">Abrir recorrido en Google Earth</button>
+      <button class="ghost" id="btnEarth2">Abrir en Google Earth</button>
+      <button class="ghost" id="btnShareKml2">Exportar KML</button>
       <button class="ghost" id="btnNewDay" hidden>Empezar otra jornada</button>
     </div>
   </section>
-
   </div>
 
-  <section id="tab-reg" role="tabpanel" style="display:grid;gap:10px" hidden>
+  <!-- Registros del mes -->
+  <section id="tab-reg" role="tabpanel" style="display:grid;gap:14px" hidden>
     <div class="row2"><h2>Registros del mes</h2><span class="hint" id="capacity"></span></div>
+    <div class="pump">
+      <div class="r"><span class="k">Km recorridos</span><span class="v" id="mKm">0</span></div>
+      <div class="r"><span class="k">Litros</span><span class="v s" id="mLit">0.00</span></div>
+      <div class="r"><span class="k">Importe $</span><span class="v s" id="mImp">0.00</span></div>
+      <div class="r"><span class="k">Rendimiento km/L</span><span class="v s" id="mRend">—</span></div>
+    </div>
     <div class="list" id="list"><div class="empty">Conecta la hoja para ver los registros.</div></div>
     <button class="ghost small" id="btnReload">Actualizar desde la hoja</button>
+    <div class="card">
+      <div class="row2"><h3>Recorridos GPS (KML)</h3><span class="hint" id="kmlMonth"></span></div>
+      <div id="dayList"><div class="empty">Aún no hay recorridos grabados este mes.</div></div>
+      <div class="actions">
+        <button class="primary small" id="btnMonthKml">Exportar KML del mes</button>
+        <button class="ghost small" id="btnMonthEarth">Ver mes en Google Earth</button>
+      </div>
+    </div>
   </section>
 
+  <!-- Ajustes -->
   <section id="tab-aj" role="tabpanel" hidden>
     <div class="card">
       <h2>Ajustes</h2>
+
+      <h3>Domicilio particular</h3>
+      <div class="homebox none" id="homeState"><svg viewBox="0 0 24 24"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg><div><b id="homeTitle">Sin definir</b><div class="hint" id="homeText">Cada día el primer tramo sale del domicilio y el último llega a él.</div></div></div>
+      <div class="actions"><button class="primary small" id="btnHome">Usar mi ubicación actual</button><button class="ghost small" id="btnHomeEdit">Escribir coordenadas</button></div>
+      <label class="check"><input type="checkbox" id="sAuto"><span>Armar la grabación con la alerta de inicio: empieza sola cuando el vehículo sale del domicilio.</span></label>
+
+      <h3>Detección de paradas</h3>
+      <div class="grid">
+        <label>Detenido al menos (min)<input class="num" type="number" id="sStop" min="2" max="30"></label>
+        <label>Dentro de un radio (m)<input class="num" type="number" id="sRadius" min="50" max="500" step="10"></label>
+      </div>
+      <p class="hint">Cada parada agrega un registro: el km inicial es el final del registro anterior y el final se estima con el GPS hasta que lo confirmes con la foto del odómetro.</p>
+
       <h3>Conexión con la hoja</h3>
       <p class="hint" id="connState"></p>
       <label>Dirección del servicio de Google (/exec)<input id="sUrl" autocomplete="off"></label>
@@ -253,7 +392,6 @@ details .card{border:0;padding:0}
       <div class="grid">
         <label>Recordar inicio<input type="time" id="sStart"></label>
         <label>Recordar cierre<input type="time" id="sEnd"></label>
-        <label>Parada después de (min)<input type="number" id="sStop" min="1" max="30"></label>
       </div>
       <div class="days" id="sDays"></div>
 
@@ -266,766 +404,19 @@ details .card{border:0;padding:0}
       <label>Usuario (No. de empleado _ Nombre completo)<input id="vUser"></label>
       <label>TAG / No. de tarjeta<input id="vTag"></label>
       <div class="actions"><button class="primary" id="btnSaveSettings">Guardar ajustes</button></div>
+      <p class="hint" style="text-align:center">Bitácora Flotilla 2.0</p>
     </div>
   </section>
 </div>
 
 <nav class="tabs" role="tablist" aria-label="Secciones">
-  <button role="tab" id="t-hoy" aria-selected="true" data-tab="hoy"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 1 18 0"/><path d="M12 12l5-5"/><circle cx="12" cy="12" r="1.5"/><path d="M5 19h14"/></svg>Hoy</button>
-  <button role="tab" id="t-reg" aria-selected="false" data-tab="reg"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Registros</button>
+  <button role="tab" id="t-hoy" aria-selected="true" data-tab="hoy"><svg viewBox="0 0 24 24"><path d="M3 15a9 9 0 1 1 18 0"/><path d="M12 15l5-6"/><circle cx="12" cy="15" r="1.5"/><path d="M5 20h14"/></svg>Hoy</button>
+  <button role="tab" id="t-reg" aria-selected="false" data-tab="reg"><svg viewBox="0 0 24 24"><path d="M4 21V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v16"/><path d="M3 21h13"/><path d="M15 9h2a2 2 0 0 1 2 2v6a1.5 1.5 0 0 0 3 0V8l-3-3"/><path d="M7 7h5v4H7z"/></svg>Registros</button>
   <button role="tab" id="t-aj" aria-selected="false" data-tab="aj"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>Ajustes</button>
 </nav>
 
 <div class="modal" id="modal" hidden><div class="sheet" id="sheet"></div></div>
 
-<script>
-(() => {
-"use strict";
-const A = window.Android;
-const $ = id => document.getElementById(id);
-const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x !== undefined) e.textContent = x; return e; };
-const pad = n => String(n).padStart(2, "0");
-const isoOf = d => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
-const today = () => isoOf(new Date());
-const hm = t => { const d = new Date(t); return pad(d.getHours()) + ":" + pad(d.getMinutes()); };
-const num = v => { if (v === null || v === undefined || String(v).trim() === "") return null; const n = parseFloat(String(v).replace(/[^0-9.\-]/g, "")); return isNaN(n) ? null : n; };
-const money = n => "$" + (n || 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmt = (n, d = 0) => (n || 0).toLocaleString("es-MX", { minimumFractionDigits: d, maximumFractionDigits: d });
-const coordStr = (lat, lon) => (typeof lat === "number" && typeof lon === "number") ? lat.toFixed(6) + ", " + lon.toFixed(6) : "";
-const parseCoords = s => { const m = String(s || "").match(/(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/); if (!m) return null; const lat = +m[1], lon = +m[2]; return Math.abs(lat) <= 90 && Math.abs(lon) <= 180 ? { lat, lon } : null; };
-const fechaLarga = iso => { if (!iso) return ""; const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" }); };
-
-if (!A) { document.body.innerHTML = "<p style='padding:20px'>Abre esta pantalla desde la app Bitácora Flotilla en Android.</p>"; return; }
-
-// ---------- puente con Android ----------
-let cbSeq = 1; const cbs = {};
-window.__cb = (id, s) => { const f = cbs[id]; delete cbs[id]; if (f) f(JSON.parse(s)); };
-const nat = (fn, ...args) => new Promise(res => { const id = cbSeq++; cbs[id] = res; A[fn](id, ...args); });
-const call = (action, payload) => nat("call", action, JSON.stringify(payload || {}));
-
-// ---------- estado ----------
-const DKEY = "bitacora-dia-v1";
-const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } };
-const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
-let cfg = JSON.parse(A.config());
-let sheet = { rows: [], header: {}, firstFree: null, lastKm: null };
-const FIELDS = ["fTras", "kmIni", "kmFin", "asunto", "de", "deC", "a", "aC", "fCarga", "importe", "litros", "ticket", "factura"];
-
-function freshDay() { return { date: today(), stage: "idle", row: null, entry: { fTras: today() }, photos: {}, cargaSaved: false, tramoStart: 0, stopsDone: {}, done: [] }; }
-let day = load(DKEY, null);
-if (!day || (day.date !== today() && day.stage !== "running")) day = freshDay();
-day.stopsDone = day.stopsDone || {}; day.done = day.done || [];
-const RGKEY = "bitacora-gps-filas";
-const rowGps = load(RGKEY, {});
-const tramoKm = () => { try { return A.trackKm(day.date, day.tramoStart || 0, 0); } catch (e) { return null; } };
-const persist = () => {
-  save(DKEY, day);
-  A.setDay(JSON.stringify({ date: day.date, started: day.stage === "running" || day.stage === "closed", ended: day.stage === "closed", rest: day.stage === "rest" }));
-};
-
-// ---------- avisos en pantalla ----------
-function banner(kind, title, text, actions, id) {
-  const box = $("banners");
-  if (id) { const old = box.querySelector('[data-id="' + id + '"]'); if (old) old.remove(); }
-  const b = el("div", "banner " + kind); if (id) b.dataset.id = id;
-  if (title) b.appendChild(el("b", "", title));
-  if (text) b.appendChild(el("div", "", text));
-  const row = el("div", "actions");
-  (actions || []).forEach(a => { const x = el("button", "small " + (a.cls || "ghost"), a.label); x.onclick = () => { a.run && a.run(); if (!a.keep) b.remove(); }; row.appendChild(x); });
-  if (!actions || !actions.length) { const x = el("button", "small ghost", "Entendido"); x.onclick = () => b.remove(); row.appendChild(x); }
-  b.appendChild(row);
-  box.prepend(b);
-  return b;
-}
-function beep() {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    [0, .35, .7].forEach(t => { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(ctx.destination);
-      g.gain.setValueAtTime(.0001, ctx.currentTime + t); g.gain.exponentialRampToValueAtTime(.4, ctx.currentTime + t + .02); g.gain.exponentialRampToValueAtTime(.0001, ctx.currentTime + t + .25);
-      o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + .3); });
-    if (navigator.vibrate) navigator.vibrate([300, 150, 300]);
-  } catch (e) {}
-}
-
-window.onNative = (type, s) => {
-  const d = JSON.parse(s);
-  if (type === "alert" && d.kind !== "test") { beep(); showAlert(d.kind, d.title, d.text); }
-  if (type === "openAlert") { if (d.kind === "stop") { renderTrack(); setTimeout(autoRegisterPending, 300); } else showAlert(d.kind); }
-  if (type === "track" || type === "stopClosed") renderTrack();
-  if (type === "resume") { cfg = JSON.parse(A.config()); renderPerms(); renderTrack(); checkReminders(); setTimeout(autoRegisterPending, 500); }
-  if (type === "perms") renderPerms();
-};
-function showAlert(kind, title, text) {
-  if ($("tab-hoy") && $("tab-hoy").hidden && kind !== "test") showTab("hoy");
-  if (kind === "start") banner("alert", title || "Registra el inicio de jornada", text || "Toma la foto del odómetro al salir.", [{ label: "Ir al inicio", cls: "primary", run: () => $("stepStart").scrollIntoView() }], "a-start");
-  else if (kind === "end") banner("alert", title || "Registra el fin de jornada", text || "Toma la foto del odómetro al llegar.", [{ label: "Ir al cierre", cls: "primary", run: () => $("btnEnd").scrollIntoView({ block: "center" }) }], "a-end");
-  else if (kind === "stop") { banner("alert", title || "Parada detectada", text || "Toma la foto del odómetro y la del lugar.", [{ label: "Ver parada", cls: "primary", run: autoRegisterPending }], "a-stop"); setTimeout(autoRegisterPending, 300); }
-  else if (kind === "resume") banner("bad", "La grabación del recorrido se detuvo", "Toca Reanudar para seguir grabando.", [{ label: "Reanudar", cls: "primary", run: startTracking }], "a-resume");
-}
-window.onBack = () => { if (!$("modal").hidden) { closeModal(); return true; } return false; };
-
-// ---------- lectura de fotos (texto reconocido en el teléfono) ----------
-function readOdometer(lines, lastKm) {
-  const cands = [];
-  lines.forEach(l => {
-    const t = l.text.toUpperCase();
-    if (/TRIP|ODO\s*B|RPM|°|:\d\d/.test(t) && !/ODO(?!\s*B)/.test(t)) return;
-    (t.match(/\d[\d ,.]{2,9}\d/g) || []).forEach(raw => {
-      if (/\.\d$/.test(raw.trim())) return;                 // 1234.5 suele ser el parcial
-      const digits = raw.replace(/[^\d]/g, "");
-      if (digits.length < 3 || digits.length > 7) return;
-      const v = parseInt(digits, 10);
-      let score = (l.h || 10) + (/KM/.test(t) ? 25 : 0) + digits.length * 2;
-      if (lastKm) { if (v >= lastKm && v < lastKm + 3000) score += 60; else if (v < lastKm) score -= 40; }
-      cands.push({ v, score });
-    });
-  });
-  cands.sort((a, b) => b.score - a.score);
-  return cands.length ? cands[0].v : null;
-}
-function readTicket(lines) {
-  const L = lines.slice().sort((a, b) => (a.y - b.y) || (a.x - b.x)).map(l => l.text.toUpperCase());
-  const out = {};
-  const numIn = s => { const m = String(s).match(/\$?\s*(\d{1,3}(?:[,\s]\d{3})*|\d+)[.,](\d{2,3})\b/); return m ? parseFloat(m[1].replace(/[,\s]/g, "") + "." + m[2]) : null; };
-  const near = (re, fn) => { for (let i = 0; i < L.length; i++) if (re.test(L[i])) { const v = fn(L[i].replace(re, " ")) ?? (L[i + 1] ? fn(L[i + 1]) : null); if (v !== null && v !== undefined) return v; } return null; };
-  out.importe = near(/TOTAL\s*(A\s*PAGAR)?|IMPORTE|MONTO|PAGAR/, numIn);
-  out.litros = near(/LITROS|LTS\.?|VOLUMEN|CANTIDAD/, numIn);
-  if (out.litros === null) { for (const s of L) { const m = s.match(/(\d+[.,]\d{1,3})\s*(L|LT|LTS|LITROS)\b/); if (m) { out.litros = parseFloat(m[1].replace(",", ".")); break; } } }
-  if (out.importe === null) { let best = null; L.forEach(s => { if (/\$/.test(s)) { const v = numIn(s); if (v !== null && (best === null || v > best)) best = v; } }); out.importe = best; }
-  for (const s of L) {
-    let m = s.match(/(20\d\d)[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
-    if (m) { out.fecha = m[1] + "-" + pad(m[2]) + "-" + pad(m[3]); break; }
-    m = s.match(/(?<!\d)(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})(?!\d)/);
-    if (m) { let y = +m[3]; if (y < 100) y += 2000; const mo = +m[2], d = +m[1]; if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) { out.fecha = y + "-" + pad(mo) + "-" + pad(d); break; } }
-  }
-  out.folio = near(/FOLIO|NO\.?\s*TICKET|TICKET|TRANSACCI[OÓ]N|TRANS\.?|TKT/, s => { const m = s.match(/[#:\s]*([A-Z0-9][A-Z0-9\-]{3,})/); return m && /\d/.test(m[1]) ? m[1] : null; });
-  out.factura = near(/FACTURA/, s => { const m = s.match(/[#:\s]*([A-Z0-9][A-Z0-9\-]{3,})/); return m && /\d/.test(m[1]) ? m[1] : null; });
-  return out;
-}
-
-// ---------- tarjetas de foto ----------
-const SLOTS = {
-  ini: { title: "Odómetro al salir", sub: "km inicial y punto de salida" },
-  fin: { title: "Odómetro al llegar", sub: "km final y punto de llegada" },
-  ticket: { title: "Ticket de bomba", sub: "importe, litros y folio" },
-  ticketCar: { title: "Ticket Car", sub: "comprobante de la tarjeta (opcional)" },
-  odoCarga: { title: "Odómetro en la carga", sub: "opcional, va a la evidencia" }
-};
-function slotInfo(slot) {
-  if (SLOTS[slot]) return SLOTS[slot];
-  if (slot[0] === "p") return { title: "Odómetro en la parada", sub: "km donde termina el tramo" };
-  if (slot[0] === "l") return { title: "Foto de la parada", sub: "lugar, hora y coordenadas" };
-  return { title: slot, sub: "" };
-}
-function setModal(id, v) { const e = $(id); if (!e || v === null || v === undefined || v === "") return; e.value = v; e.classList.add("auto"); e.classList.remove("bad"); }
-function autoFill(id, v) { if (v === null || v === undefined || v === "") return; $(id).value = v; $(id).classList.add("auto"); $(id).classList.remove("bad"); syncEntry(); }
-
-function drawShot(slot) {
-  const box = $("shot-" + slot); if (!box) return;
-  const p = day.photos[slot]; box.textContent = "";
-  const s = el("div", "shot" + (p && p.preview ? " has" : ""));
-  const t = el("div", "t"); t.append(el("span", "", slotInfo(slot).title), el("span", "", slotInfo(slot).sub)); t.firstChild.style.cssText = "font-weight:600;font-size:14px;color:var(--ink)";
-  s.appendChild(t);
-  if (p && p.busy) s.appendChild(el("div", "hint", "Procesando la foto…"));
-  if (p && p.preview) {
-    const img = el("img"); img.src = p.preview; img.alt = slotInfo(slot).title; s.appendChild(img);
-    const kv = el("dl", "kv");
-    const add = (k, v) => { kv.append(el("dt", "", k), el("dd", "", v)); };
-    add("Fecha y hora", new Date(p.time).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" }) + (p.timeSource === "foto" ? "" : " *"));
-    add("Coordenadas", coordStr(p.lat, p.lon) || "—");
-    if (p.address) add("Lugar", p.address);
-    if (p.read) add("Leído", p.read);
-    s.appendChild(kv);
-    if (p.timeSource !== "foto") s.appendChild(el("div", "hint", "* La foto no traía hora de captura; se usó la hora actual."));
-    if (p.note) s.appendChild(el("div", "err", p.note));
-    if (typeof p.lat !== "number") {
-      const r = el("div", "actions");
-      const here = el("button", "small primary", "Usar mi ubicación actual"); here.onclick = () => locateFor(slot);
-      r.appendChild(here); s.appendChild(el("div", "hint", "La foto no trae ubicación. Agrégala para la marca de agua:")); s.appendChild(r);
-    }
-    if (p.uploaded) s.appendChild(el("div", "hint", "Subida a Drive ✓"));
-  }
-  const pick = el("div", "choice");
-  const cam = el("button", "primary small", p && p.preview ? "Tomar otra" : "Tomar foto"); cam.onclick = () => takePhoto(slot, "camera");
-  const gal = el("button", "ghost small", "Elegir de galería"); gal.onclick = () => takePhoto(slot, "gallery");
-  pick.append(cam, gal); s.appendChild(pick);
-  box.appendChild(s);
-}
-
-async function takePhoto(slot, source) {
-  const prev = day.photos[slot];
-  day.photos[slot] = Object.assign({}, prev || {}, { busy: true }); drawShot(slot);
-  const r = await nat("photo", slot, source);
-  if (!r.ok) { if (prev) day.photos[slot] = prev; else delete day.photos[slot]; drawShot(slot); if (!r.cancelled) banner("bad", "No se pudo procesar la foto", r.error); return; }
-  const p = { preview: r.preview, lat: r.lat, lon: r.lon, time: r.time, timeSource: r.timeSource, address: r.address || "", uploaded: false };
-  const lines = r.lines || [];
-  if (slot === "ini" || slot === "fin" || slot === "odoCarga") {
-    const km = readOdometer(lines, sheet.lastKm);
-    p.read = km !== null ? fmt(km) + " km" : "";
-    if (km === null) p.note = "No se distingue el odómetro; escribe el km o toma la foto más cerca.";
-    if (slot === "ini") { autoFill("kmIni", km); autoFill("fTras", isoOf(new Date(r.time))); autoFill("deC", coordStr(r.lat, r.lon)); autoFill("de", r.address); }
-    if (slot === "fin") { autoFill("kmFin", km); autoFill("aC", coordStr(r.lat, r.lon)); autoFill("a", r.address); }
-  } else if (slot[0] === "p") {
-    const st = day.stopsDone[Number(slot.slice(1))];
-    const km = readOdometer(lines, st && st.km ? st.km : (num(day.entry.kmIni) ?? sheet.lastKm));
-    p.read = km !== null ? fmt(km) + " km" : "";
-    if (km === null) p.note = "No se distingue el odómetro; escribe el km o toma la foto más cerca.";
-    setModal("m_km", km);
-    const l = day.photos["l" + slot.slice(1)];
-    if (!l || typeof l.lat !== "number") { setModal("m_aC", coordStr(r.lat, r.lon)); setModal("m_a", r.address); }
-  } else if (slot[0] === "l") {
-    setModal("m_aC", coordStr(r.lat, r.lon)); setModal("m_a", r.address);
-  } else if (slot === "ticket") {
-    const t = readTicket(lines);
-    const bits = []; if (t.importe) bits.push(money(t.importe)); if (t.litros) bits.push(fmt(t.litros, 2) + " L"); if (t.folio) bits.push("folio " + t.folio);
-    p.read = bits.join(" · ");
-    if (!t.importe && !t.litros) p.note = "No pude leer importe ni litros; escríbelos.";
-    autoFill("importe", t.importe); autoFill("litros", t.litros); autoFill("ticket", t.folio); autoFill("factura", t.factura);
-    autoFill("fCarga", t.fecha || isoOf(new Date(r.time)));
-  }
-  day.photos[slot] = p; persist(); drawShot(slot); updateOdo(); updateStopModal();
-}
-
-async function locateFor(slot) {
-  const r = await nat("location");
-  if (!r.ok) { banner("bad", "Sin ubicación", r.error); return; }
-  const w = await nat("rewatermark", slot, r.lat, r.lon);
-  if (!w.ok) { banner("bad", "No se pudo actualizar la foto", w.error); return; }
-  Object.assign(day.photos[slot], { preview: w.preview, lat: r.lat, lon: r.lon, address: r.address || "", uploaded: false });
-  if (slot === "ini") { autoFill("deC", coordStr(r.lat, r.lon)); autoFill("de", r.address); }
-  if (slot === "fin") { autoFill("aC", coordStr(r.lat, r.lon)); autoFill("a", r.address); }
-  if (slot[0] === "p" || slot[0] === "l") { setModal("m_aC", coordStr(r.lat, r.lon)); setModal("m_a", r.address); }
-  persist(); drawShot(slot);
-}
-
-// ---------- formulario del día ----------
-function fillForm() { FIELDS.forEach(k => { $(k).value = day.entry[k] ?? ""; }); updateOdo(); }
-function syncEntry() { FIELDS.forEach(k => day.entry[k] = $(k).value.trim()); persist(); }
-FIELDS.forEach(k => $(k).addEventListener("input", () => { $(k).classList.remove("auto", "bad"); syncEntry(); updateOdo(); }));
-function updateOdo() {
-  const a = num($("kmIni").value), b = num($("kmFin").value), d = a !== null && b !== null ? Math.max(0, b - a) : 0;
-  const o = $("odo"); o.textContent = ""; String(Math.round(d)).split("").forEach(c => o.appendChild(el("span", "", c)));
-  if ($("cOdo")) updateCompare();
-}
-function need(ids, errEl, msg) {
-  const bad = ids.filter(([id, ok]) => !ok(day.entry[id]));
-  ids.forEach(([id]) => $(id).classList.toggle("bad", bad.some(b => b[0] === id)));
-  if (bad.length) { $(errEl).textContent = msg + bad.map(b => b[2]).join(", ") + "."; $(errEl).hidden = false; $(bad[0][0]).focus(); return false; }
-  $(errEl).hidden = true; return true;
-}
-const has = v => v !== undefined && v !== null && String(v).trim() !== "";
-const isNum = v => num(v) !== null;
-
-function slotsToSend(list) { return list.filter(s => day.photos[s.slot] && day.photos[s.slot].preview && !day.photos[s.slot].uploaded); }
-function markUploaded(list) { list.forEach(s => { if (day.photos[s.slot]) day.photos[s.slot].uploaded = true; }); }
-function evidenceSlots() {
-  const odo = day.photos.odoCarga ? "odoCarga" : day.photos.fin ? "fin" : "ini";
-  return [{ slot: "ticket", box: "ticketBomba" }, { slot: "ticketCar", box: "ticketCar" }, { slot: odo, box: "odometro" }];
-}
-
-async function saveRow(extraSlots, label) {
-  const slots = slotsToSend(extraSlots);
-  const r = await call("save", { row: day.row, entry: day.entry, photoSlots: slots });
-  if (!r.ok) throw new Error(r.error || "Error al guardar");
-  day.row = r.row; markUploaded(slots); persist();
-  return r;
-}
-
-// Inicio
-$("btnStart").onclick = async () => {
-  syncEntry();
-  if (!need([["kmIni", isNum, "km inicial"], ["fTras", has, "fecha"]], "startErr", "Falta: ")) return;
-  if (!cfg.scriptUrl) { banner("bad", "Primero conecta tu hoja", "Pega la dirección del servicio de Google."); return; }
-  const b = $("btnStart"); b.disabled = true; b.textContent = "Guardando inicio…";
-  try {
-    const t = await nat("startTracking");
-    if (!t.ok) throw new Error(t.error || "No se pudo iniciar el GPS");
-    day.stage = "running"; day.startedAt = Date.now(); day.tramoStart = Date.now(); persist();
-    await saveRow([{ slot: "ini" }]);
-    banner("ok", "Jornada iniciada", "Se guardó en la fila " + day.row + " y el recorrido se está grabando.", null, "ok");
-    loadSheet();
-  } catch (e) {
-    banner("bad", "El inicio no se guardó en la hoja", e.message + ". El recorrido sí se está grabando; vuelve a intentarlo con conexión.", [{ label: "Reintentar", cls: "primary", run: () => saveRow([{ slot: "ini" }]).then(() => banner("ok", "Inicio guardado", "Fila " + day.row, null, "ok")).catch(x => banner("bad", "Sigue sin guardarse", x.message)) }], "startfail");
-  } finally { b.disabled = false; b.textContent = "Iniciar jornada y grabar recorrido"; render(); }
-};
-
-// Descanso
-$("btnRest").onclick = () => {
-  openModal(sh => {
-    sh.append(el("h2", "", "¿Marcar " + fechaLarga(today()) + " como día de descanso?"),
-      el("p", "hint", "Se escribe una fila con la fecha, “DÍA DE DESCANSO” en asunto y el mismo kilometraje inicial y final (" + (sheet.lastKm !== null ? fmt(sheet.lastKm) + " km" : "último km registrado") + "). Hoy no sonarán alertas."));
-    const r = el("div", "actions");
-    const yes = el("button", "warnbtn", "Sí, hoy descanso"); const no = el("button", "ghost", "Cancelar");
-    no.onclick = closeModal;
-    yes.onclick = async () => {
-      yes.disabled = true; yes.textContent = "Guardando…";
-      const res = await call("rest", { date: today(), km: sheet.lastKm });
-      closeModal();
-      if (!res.ok) { banner("bad", "No se guardó el día de descanso", res.error); return; }
-      day = freshDay(); day.stage = "rest"; day.row = res.row; persist(); render(); loadSheet();
-      banner("ok", "Día de descanso registrado", "Fila " + res.row + ". Las alertas de hoy quedan apagadas.", null, "ok");
-    };
-    r.append(yes, no); sh.appendChild(r);
-  });
-};
-
-// Carga
-$("btnCarga").onclick = async () => {
-  syncEntry();
-  if (!need([["fCarga", has, "fecha de carga"], ["importe", v => num(v) > 0, "importe"], ["litros", v => num(v) > 0, "litros"]], "cargaErr", "Falta: ")) return;
-  const b = $("btnCarga"); b.disabled = true; b.textContent = "Subiendo fotos y guardando…";
-  try {
-    const r = await saveRow(evidenceSlots());
-    day.cargaSaved = true; persist();
-    banner("ok", "Carga guardada", "Fila " + r.row + (r.evidenceTab ? " · fotos y datos en la pestaña " + r.evidenceTab : "") + ".", null, "ok");
-    $("cargaBox").open = false; loadSheet();
-  } catch (e) { banner("bad", "La carga no se guardó", e.message); }
-  finally { b.disabled = false; b.textContent = "Guardar carga en la bitácora"; }
-};
-
-// Fin
-$("btnEnd").onclick = async () => {
-  syncEntry();
-  const ini = num(day.entry.kmIni);
-  if (!need([["kmFin", v => isNum(v) && (ini === null || num(v) >= ini), "km final (no menor al inicial)"]], "endErr", "Revisa: ")) return;
-  const sinMovimiento = day.done.length > 0 && num(day.entry.kmFin) === ini && !(num(day.entry.importe) > 0);
-  const fuel = num(day.entry.importe) > 0;
-  if (fuel && !need([["fCarga", has, "fecha de carga"], ["litros", v => num(v) > 0, "litros"]], "endErr", "La carga está incompleta: ")) { $("cargaBox").open = true; return; }
-  const b = $("btnEnd"); b.disabled = true; b.textContent = "Cerrando el día…";
-  try {
-    A.stopTracking();
-    const slots = [{ slot: "fin" }].concat(fuel ? evidenceSlots() : []);
-    const r = sinMovimiento ? { row: day.done[day.done.length - 1].row } : await saveRow(slots);
-    if (!sinMovimiento) { const g = tramoKm(); rowGps[day.entry.fTras + "|" + r.row] = g; save(RGKEY, rowGps); day.done.push({ row: r.row, de: day.entry.de, a: day.entry.a, km: num(day.entry.kmFin) - (ini || 0), gps: g }); }
-    b.textContent = "Guardando recorrido…";
-    const iniK = num(day.entry.kmIni), finK = num(day.entry.kmFin);
-    const k = await nat("exportTrack", day.date, true, iniK !== null && finK !== null ? String(finK - iniK) : "");
-    day.gpsKm = gpsKm(day.date);
-    day.stage = "closed"; day.kml = k; persist();
-    banner("ok", "Día cerrado", day.done.length + (day.done.length === 1 ? " tramo guardado" : " tramos guardados") + " (última fila " + r.row + ")." + (k.links && k.links.kml ? " Recorrido guardado en Drive." : "") + (k.local ? " Copia en " + k.local + "." : ""), null, "ok");
-    loadSheet();
-  } catch (e) {
-    banner("bad", "El cierre no se guardó en la hoja", e.message + ". El recorrido ya se detuvo; toca Terminar otra vez cuando tengas señal.");
-    day.stage = "running"; persist();
-  } finally { b.disabled = false; b.textContent = "Terminar jornada y guardar"; render(); }
-};
-
-async function startTracking() { const t = await nat("startTracking"); if (!t.ok) banner("bad", "No se pudo reanudar", t.error || ""); renderTrack(); }
-$("btnEarth").onclick = () => A.openEarth(day.date);
-$("btnEarth2").onclick = () => A.openEarth(day.date);
-$("btnNewDay").onclick = () => { day = freshDay(); persist(); render(); };
-
-// ---------- recorrido ----------
-function gpsKm(date) { try { const t = JSON.parse(A.track(date || day.date)); return t.points > 1 ? t.km : null; } catch (e) { return null; } }
-let armedStop = -1;
-function renderTrack() {
-  updateCompare();
-  if (day.stage !== "running") return;
-  const t = JSON.parse(A.track(day.date));
-  const ini = num(day.entry.kmIni);
-  $("gKm").textContent = fmt(t.km, 1) + " km";
-  const tk = tramoKm();
-  $("gEst").textContent = ini !== null && tk !== null ? fmt(Math.round(ini + tk)) : "—";
-  $("gStops").textContent = t.stops.length;
-  $("gIni").textContent = "Tramo " + (day.done.length + 1) + (day.row ? " · fila " + day.row : "") + (ini !== null ? " · desde km " + fmt(ini) : "") + (day.entry.de ? " · sale de " + day.entry.de : "") + ". El odómetro estimado suma el GPS del tramo.";
-  $("runSince").textContent = day.startedAt ? "desde las " + hm(day.startedAt) : "";
-  $("stopsTitle").textContent = "Paradas (" + cfg.stopMinutes + " min dentro de 100 m)";
-  const w = $("gpsWarn");
-  if (!t.active) { w.hidden = false; w.textContent = "La grabación del recorrido está detenida. "; const b = el("button", "small primary", "Reanudar"); b.onclick = startTracking; w.appendChild(b); }
-  else if (t.last && Date.now() - t.last.t > 5 * 60000) { w.hidden = false; w.textContent = "Sin señal de GPS desde las " + hm(t.last.t) + ". Revisa que la ubicación esté encendida."; }
-  else w.hidden = true;
-  const list = $("stopList"); list.textContent = "";
-  if (!t.stops.length) list.appendChild(el("div", "empty", "Aún no hay paradas. Se registran solas cuando el vehículo se queda " + cfg.stopMinutes + " min dentro de 100 m, o agrégala con el botón."));
-  t.stops.forEach((s, i) => {
-    const r = el("div", "stop"); r.style.gridTemplateColumns = "auto 1fr auto auto";
-    const a = el("div", "a");
-    const t1 = el("div", "", s.address || coordStr(s.lat, s.lon)); if (s.manual) t1.appendChild(el("span", "tag", "manual"));
-    a.append(t1, el("div", "hint", coordStr(s.lat, s.lon)));
-    const m = el("span", "m", hm(s.start) + (s.open ? " · ahora" : "–" + hm(s.end)) + "\n" + s.minutes + " min"); m.style.whiteSpace = "pre"; m.style.textAlign = "right";
-    const st = day.stopsDone[s.start];
-    if (st && st.row) {
-      a.appendChild(el("div", "hint", "Registro en la fila " + st.row + (st.confirmed ? " · fotos ✓" : " · km estimado por GPS")));
-      if (!st.confirmed) { const f = el("button", "small ghost", "Confirmar km con fotos"); f.style.marginTop = "6px"; f.onclick = () => openConfirm(s, i, st.row, st.km); a.appendChild(f); }
-    }
-    else if (st && st.ignored) a.appendChild(el("div", "hint", "No fue parada (sin registro)"));
-    else if (registering) a.appendChild(el("div", "hint", "Guardando registro…"));
-    else { const f = el("button", "small primary", "Tomar fotos y registrar"); f.style.marginTop = "6px"; f.onclick = () => openStop(s, i); a.appendChild(f); }
-    const x = el("button", "x" + (armedStop === i ? " armed" : ""), armedStop === i ? "¿Borrar?" : "✕");
-    x.setAttribute("aria-label", "Borrar parada " + (i + 1));
-    x.onclick = () => { if (armedStop !== i) { armedStop = i; renderTrack(); return; } armedStop = -1; A.removeStop(day.date, i); setTimeout(renderTrack, 400); };
-    r.append(el("span", "n", i + 1), a, m, x);
-    list.appendChild(r);
-  });
-}
-// ---------- fotos en cada parada: cierran el tramo ----------
-let openStopKey = null;
-function pendingStops() { try { return JSON.parse(A.track(day.date)).stops.map((s, i) => ({ s, i })).filter(o => !day.stopsDone[o.s.start]); } catch (e) { return []; } }
-function openStop(s, i) {
-  openStopKey = s.start;
-  const kp = "p" + s.start, kl = "l" + s.start;
-  openModal(sh => {
-    sh.appendChild(el("h2", "", "Parada " + (i + 1) + " · " + hm(s.start)));
-    sh.appendChild(el("p", "hint", (s.address || coordStr(s.lat, s.lon)) + ". Con estas fotos se cierra el tramo " + (day.done.length + 1) + " (sale de " + (day.entry.de || "inicio") + ", km " + (day.entry.kmIni || "—") + ") y empieza uno nuevo desde aquí."));
-    const d1 = el("div"); d1.id = "shot-" + kp; const d2 = el("div"); d2.id = "shot-" + kl;
-    sh.append(d1, d2);
-    const g = el("div", "grid");
-    const mk = (id, label, val, cls, type) => { const l = el("label", "", label); const i2 = el("input", cls || ""); i2.id = id; i2.type = type || "text"; i2.value = val ?? ""; i2.oninput = () => { i2.classList.remove("auto", "bad"); updateStopModal(); }; l.appendChild(i2); return l; };
-    g.append(mk("m_km", "Km en esta parada", "", "num", "number"));
-    const est = el("div", "hint"); est.id = "m_est"; g.appendChild(est);
-    sh.append(g, mk("m_a", "Llega a (dirección)", s.address), mk("m_aC", "Coordenadas", coordStr(s.lat, s.lon), "num"), mk("m_asunto", "Asunto de este tramo", day.entry.asunto || ""));
-    const err = el("div", "err"); err.id = "m_err"; err.hidden = true; sh.appendChild(err);
-    const act = el("div", "actions");
-    const ok = el("button", "primary", "Cerrar tramo y guardar fila"); ok.id = "m_ok";
-    const ign = el("button", "ghost", "Ignorar parada"); const later = el("button", "ghost", "Después");
-    let armed = false;
-    ok.onclick = async () => {
-      const km = num($("m_km").value), ini = num(day.entry.kmIni);
-      if (km === null || (ini !== null && km < ini)) { $("m_km").classList.add("bad"); err.textContent = km === null ? "Falta el km de la parada." : "El km no puede ser menor al inicial del tramo (" + fmt(ini) + ")."; err.hidden = false; return; }
-      const miss = [!day.photos[kp] && "odómetro", !day.photos[kl] && "lugar"].filter(Boolean);
-      if (miss.length && !armed) { armed = true; ok.textContent = "Guardar sin foto de " + miss.join(" ni de "); err.textContent = "Falta la foto de " + miss.join(" y del ") + "."; err.hidden = false; return; }
-      ok.disabled = true; ok.textContent = "Subiendo fotos y guardando…";
-      try { await closeTramo(s, km, $("m_a").value.trim(), $("m_aC").value.trim(), $("m_asunto").value.trim(), [kp, kl]); closeModal(); }
-      catch (e) { err.textContent = e.message; err.hidden = false; ok.disabled = false; ok.textContent = "Reintentar"; }
-    };
-    ign.onclick = () => { day.stopsDone[s.start] = { ignored: true }; persist(); closeModal(); renderTrack(); };
-    later.onclick = closeModal;
-    act.append(ok, ign, later); sh.appendChild(act);
-  });
-  drawShot(kp); drawShot(kl); updateStopModal();
-}
-function updateStopModal() {
-  const e = $("m_est"); if (!e) return;
-  const ini = num(day.entry.kmIni), tk = tramoKm();
-  e.textContent = ini !== null && tk !== null ? "Estimado por GPS: " + fmt(Math.round(ini + tk)) + " km (" + fmt(tk, 1) + " km de tramo)" : "";
-}
-async function closeTramo(s, km, a, aC, asunto, slots, gpsTo) {
-  day.entry = Object.assign({}, day.entry, { kmFin: String(km), a, aC, asunto });
-  const fuel = num(day.entry.importe) > 0 && !day.cargaSaved;
-  const sl = slots.map(x => ({ slot: x })).concat(fuel ? evidenceSlots() : []);
-  const r = await saveRow(sl);
-  const g = A.trackKm(day.date, day.tramoStart || 0, gpsTo || s.end || Date.now());
-  const prev = { start: day.tramoStart, cargaSaved: day.cargaSaved };
-  rowGps[day.entry.fTras + "|" + r.row] = g; save(RGKEY, rowGps);
-  day.done.push({ row: r.row, de: day.entry.de, a, km: km - (num(day.entry.kmIni) || km), gps: g, entry: Object.assign({}, day.entry), prev, stop: s.start });
-  day.stopsDone[s.start] = { row: r.row, km, confirmed: slots.length > 0 };
-  // el siguiente tramo sale de esta parada
-  slots.concat(["ini", "ticket", "ticketCar", "odoCarga"]).forEach(k => { delete day.photos[k]; A.clearPhoto(k); });
-  day.entry = { fTras: day.date, kmIni: String(km), de: a, deC: aC, asunto };
-  day.row = null; day.tramoStart = gpsTo || s.end || Date.now(); day.cargaSaved = false;
-  persist(); render();
-  if (slots.length) banner("ok", "Tramo guardado en la fila " + r.row, "Siguiente tramo desde " + (a || "esta parada") + ", km " + fmt(km) + "." + (r.evidenceTab ? " Carga en " + r.evidenceTab + "." : ""), null, "ok");
-  loadSheet();
-  return r.row;
-}
-// Cada parada (detectada o manual) se vuelve un registro en la hoja de inmediato,
-// con el km estimado por GPS; después se confirma con las fotos.
-let registering = false;
-async function autoRegisterPending() {
-  if (day.stage !== "running" || registering) return;
-  const pend = pendingStops();
-  if (!pend.length) return;
-  if (num(day.entry.kmIni) === null) { if ($("modal").hidden) { showTab("hoy"); openStop(pend[0].s, pend[0].i); } return; }
-  registering = true; renderTrack();
-  let last = null;
-  try {
-    for (const o of pend) {
-      const s = o.s, ini = num(day.entry.kmIni);
-      const tk = A.trackKm(day.date, day.tramoStart || 0, s.start);
-      const km = Math.round(ini + (tk || 0));
-      const row = await closeTramo(s, km, s.address || coordStr(s.lat, s.lon), coordStr(s.lat, s.lon), day.entry.asunto || "", [], s.start);
-      last = { s, i: o.i, row, km };
-    }
-  } catch (e) {
-    banner("bad", "La parada quedó en el recorrido, pero no se guardó en la hoja", e.message + ". Se reintentará al volver a abrir la app o con el botón de la parada.", [{ label: "Reintentar ahora", cls: "primary", run: autoRegisterPending }], "regfail");
-  } finally { registering = false; renderTrack(); }
-  if (last && $("modal").hidden) { showTab("hoy"); openConfirm(last.s, last.i, last.row, last.km); }
-}
-const promptPending = autoRegisterPending;
-
-$("btnAddStop").onclick = async () => {
-  const b = $("btnAddStop"); b.disabled = true; b.textContent = "Ubicando…";
-  const r = await nat("addStop", day.date);
-  b.disabled = false; b.textContent = "Agregar parada aquí";
-  if (!r.ok) { banner("bad", "No se agregó la parada", r.error); return; }
-  // la parada manual se registra en la hoja igual que las detectadas
-  await new Promise(res => setTimeout(res, 700));
-  b.disabled = true; b.textContent = "Guardando en la hoja…";
-  try { await autoRegisterPending(); } finally { b.disabled = false; b.textContent = "Agregar parada aquí"; }
-};
-
-// Después de llenar la fila en automático: fotos opcionales para confirmar el km y dejar evidencia
-function openConfirm(s, i, row, kmEst) {
-  const kp = "p" + s.start, kl = "l" + s.start;
-  const done = day.done.find(d => d.row === row);
-  openModal(sh => {
-    sh.appendChild(el("h2", "", "Parada " + (i + 1) + " guardada en la fila " + row));
-    sh.appendChild(el("p", "hint", "Se llenó con el km estimado por GPS (" + fmt(kmEst) + ") y tu ubicación. Toma la foto del odómetro y la del lugar para confirmar el km real y dejar la evidencia."));
-    const d1 = el("div"); d1.id = "shot-" + kp; const d2 = el("div"); d2.id = "shot-" + kl; sh.append(d1, d2);
-    const lab = el("label", "", "Km real en esta parada"); const inp = el("input", "num"); inp.id = "m_km"; inp.type = "number"; inp.value = kmEst; inp.oninput = () => inp.classList.remove("auto", "bad"); lab.appendChild(inp);
-    const la = el("label", "", "Llega a (dirección)"); const ia = el("input"); ia.id = "m_a"; ia.value = done ? done.entry.a : ""; la.appendChild(ia);
-    const lc = el("label", "", "Coordenadas"); const ic = el("input", "num"); ic.id = "m_aC"; ic.value = done ? done.entry.aC : ""; lc.appendChild(ic);
-    sh.append(lab, la, lc);
-    const err = el("div", "err"); err.hidden = true; sh.appendChild(err);
-    const act = el("div", "actions");
-    const ok = el("button", "primary", "Actualizar fila " + row + " con las fotos"), later = el("button", "ghost", "Listo, sin fotos");
-    ok.onclick = async () => {
-      const km = num(inp.value);
-      if (km === null || !done) { inp.classList.add("bad"); return; }
-      ok.disabled = true; ok.textContent = "Subiendo fotos…";
-      try {
-        const entry = Object.assign({}, done.entry, { kmFin: String(km), a: ia.value.trim(), aC: ic.value.trim() });
-        const slots = [kp, kl].filter(k => day.photos[k] && day.photos[k].preview && !day.photos[k].uploaded).map(k => ({ slot: k }));
-        const res = await call("save", { row, entry, photoSlots: slots });
-        if (!res.ok) throw new Error(res.error);
-        slots.forEach(x => { delete day.photos[x.slot]; A.clearPhoto(x.slot); });
-        done.entry = entry; done.km = km - (num(entry.kmIni) || km); done.a = entry.a;
-        day.stopsDone[s.start].km = km; day.stopsDone[s.start].confirmed = true;
-        // el tramo actual sale de esta parada: corrige su km inicial
-        if (day.done[day.done.length - 1] === done) { day.entry.kmIni = String(km); day.entry.de = entry.a; day.entry.deC = entry.aC; }
-        persist(); render(); closeModal();
-        banner("ok", "Fila " + row + " actualizada", "Km " + fmt(km) + (slots.length ? " y fotos en Drive." : "."), null, "ok");
-      } catch (e) { err.textContent = e.message; err.hidden = false; ok.disabled = false; ok.textContent = "Reintentar"; }
-    };
-    later.onclick = closeModal;
-    act.append(ok, later);
-    if (day.done[day.done.length - 1] === done) {
-      const undo = el("button", "danger", "No fue parada: quitar fila " + row);
-      let armed = false;
-      undo.onclick = async () => {
-        if (!armed) { armed = true; undo.textContent = "Toca otra vez para quitar la fila " + row; return; }
-        undo.disabled = true;
-        const res = await call("delete", { row });
-        if (!res.ok) { err.textContent = res.error; err.hidden = false; undo.disabled = false; return; }
-        // el tramo vuelve a abrirse desde donde venía
-        const e = done.entry;
-        day.entry = Object.assign({}, e, { kmFin: "", a: "", aC: "" });
-        day.row = null; day.tramoStart = done.prev ? done.prev.start : day.tramoStart; day.cargaSaved = done.prev ? done.prev.cargaSaved : false;
-        day.done.pop(); day.stopsDone[s.start] = { ignored: true };
-        persist(); render(); closeModal(); loadSheet();
-        banner("ok", "Fila " + row + " quitada", "El tramo sigue abierto desde " + (e.de || "el inicio") + ".", null, "ok");
-      };
-      act.appendChild(undo);
-    }
-    sh.appendChild(act);
-  });
-  drawShot(kp); drawShot(kl);
-}
-function updateCompare() {
-  const ini = num($("kmIni").value), fin = num($("kmFin").value);
-  const odo = ini !== null && fin !== null ? fin - ini : null;
-  const gps = day.stage === "running" || day.stage === "idle" ? tramoKm() : gpsKm(day.date);
-  $("cOdo").textContent = odo !== null ? fmt(odo) + " km" : "—";
-  $("cGps").textContent = gps !== null ? fmt(gps, 1) + " km" : "—";
-  const dif = $("cDif");
-  if (odo !== null && gps !== null) {
-    const d = odo - gps, pct = gps > 0 ? Math.abs(d) / gps * 100 : 0;
-    dif.textContent = (d > 0 ? "+" : "") + fmt(d, 1) + " km";
-    dif.className = "v" + (pct > 15 && Math.abs(d) > 3 ? " warn" : "");
-    dif.title = pct.toFixed(0) + "%";
-  } else { dif.textContent = "—"; dif.className = "v"; }
-  $("btnUseGps").hidden = !(day.stage === "running" && fin === null && ini !== null && gps !== null && gps > 0);
-}
-$("btnUseGps").onclick = () => { const ini = num($("kmIni").value), gps = tramoKm(); if (ini === null || gps === null) return; autoFill("kmFin", Math.round(ini + gps)); updateOdo(); };
-setInterval(renderTrack, 30000);
-
-// ---------- hoja ----------
-async function loadSheet() {
-  if (!cfg.scriptUrl) return;
-  const r = await call("read");
-  if (!r.ok) { banner("bad", "No se pudo leer la hoja", r.error, [{ label: "Reintentar", cls: "primary", run: loadSheet }], "readfail"); return; }
-  sheet = r;
-  const h = r.header || {};
-  $("vMes").value = h.mes || ""; $("vUser").value = h.usuario || ""; $("vPlacas").value = h.placas || ""; $("vTag").value = h.tag || "";
-  if (h.placas && h.placas !== cfg.plates) { A.setConfig(JSON.stringify({ plates: h.placas })); cfg.plates = h.placas; }
-  $("plate").hidden = !h.placas; $("plate").textContent = h.placas || "";
-  $("who").textContent = [h.mes, h.usuario].filter(Boolean).join(" · ") || cfg.name;
-  if (day.stage === "idle" && !has(day.entry.kmIni) && r.lastKm !== null) { $("kmIni").value = r.lastKm; syncEntry(); updateOdo(); }
-  renderList();
-}
-function renderList() {
-  const rows = sheet.rows || [];
-  $("capacity").textContent = rows.length + " registros · la hoja agrega filas sola";
-  const list = $("list"); list.textContent = "";
-  if (!rows.length) { list.appendChild(el("div", "empty", "Todavía no hay registros este mes.")); return; }
-  rows.slice().reverse().forEach(x => {
-    const rest = /DESCANSO/i.test(x.asunto);
-    const b = el("button", "rec" + (rest ? " restday" : ""));
-    const t = el("span", "t"); t.append(el("b", "", x.asunto || "Sin asunto"), el("span", "", rest ? "Sin movimiento" : (x.de || "—") + " → " + (x.a || "—")));
-    const km = x.kmIni !== "" && x.kmFin !== "" ? fmt(x.kmFin - x.kmIni) + " km" : "—";
-    const m = el("span", "m", km);
-    const g = !rest ? rowGps[x.fTras + "|" + x.r] ?? null : null;
-    if (g !== null) { m.appendChild(el("br")); m.appendChild(el("span", "hint", "GPS " + fmt(g, 1) + " km")); }
-    if (x.importe) { m.appendChild(el("br")); m.appendChild(el("span", "fuel", money(x.importe) + " · " + fmt(x.litros, 1) + " L")); }
-    const d = x.fTras ? x.fTras.slice(8, 10) + "/" + x.fTras.slice(5, 7) : "—";
-    b.append(el("span", "d", d), t, m);
-    b.onclick = () => editRow(x);
-    list.appendChild(b);
-  });
-}
-$("btnReload").onclick = loadSheet;
-
-// Corrección de una fila existente
-function editRow(x) {
-  openModal(sh => {
-    sh.appendChild(el("h2", "", "Fila " + x.r));
-    const f = {};
-    const mk = (k, label, type, cls) => { const l = el("label", "", label); const i = el("input", cls || ""); i.type = type || "text"; i.value = x[k] ?? ""; i.id = "e_" + k; f[k] = i; l.appendChild(i); return l; };
-    const g1 = el("div", "grid"); g1.append(mk("fTras", "Fecha traslado", "date"), mk("kmIni", "Km inicial", "number", "num"), mk("kmFin", "Km final", "number", "num"));
-    const g2 = el("div", "grid"); g2.append(mk("de", "De"), mk("deC", "Coordenadas de", "text", "num"));
-    const g3 = el("div", "grid"); g3.append(mk("a", "A"), mk("aC", "Coordenadas a", "text", "num"));
-    const g4 = el("div", "grid"); g4.append(mk("fCarga", "Fecha carga", "date"), mk("importe", "Importe", "number", "num"), mk("litros", "Litros", "number", "num"));
-    const g5 = el("div", "grid"); g5.append(mk("ticket", "# Ticket o folio"), mk("factura", "No. factura"));
-    sh.append(g1, mk("asunto", "Asunto"), g2, g3, el("h3", "", "Carga"), g4, g5);
-    const err = el("div", "err"); err.hidden = true; sh.appendChild(err);
-    const act = el("div", "actions");
-    const ok = el("button", "primary", "Guardar cambios"), del = el("button", "danger", "Borrar fila"), cancel = el("button", "ghost", "Cancelar");
-    cancel.onclick = closeModal;
-    ok.onclick = async () => {
-      const entry = {}; FIELDS.forEach(k => entry[k] = f[k].value.trim());
-      if (num(entry.kmFin) !== null && num(entry.kmIni) !== null && num(entry.kmFin) < num(entry.kmIni)) { err.textContent = "El km final no puede ser menor que el inicial."; err.hidden = false; return; }
-      ok.disabled = true; ok.textContent = "Guardando…";
-      const r = await call("save", { row: x.r, entry, photoSlots: [] });
-      if (!r.ok) { err.textContent = r.error; err.hidden = false; ok.disabled = false; ok.textContent = "Guardar cambios"; return; }
-      closeModal(); banner("ok", "Fila " + x.r + " actualizada", "", null, "ok"); loadSheet();
-    };
-    let armed = false;
-    del.onclick = async () => {
-      if (!armed) { armed = true; del.textContent = "Toca otra vez para borrar"; return; }
-      del.disabled = true;
-      const r = await call("delete", { row: x.r });
-      closeModal();
-      if (!r.ok) banner("bad", "No se borró", r.error); else { banner("ok", "Fila " + x.r + " borrada", "", null, "ok"); if (day.row === x.r) { day = freshDay(); persist(); render(); } loadSheet(); }
-    };
-    act.append(ok, del, cancel); sh.appendChild(act);
-  });
-}
-
-function openModal(build) { const s = $("sheet"); s.textContent = ""; build(s); $("modal").hidden = false; }
-function closeModal() { $("modal").hidden = true; }
-$("modal").addEventListener("click", e => { if (e.target === $("modal")) closeModal(); });
-
-// ---------- ajustes ----------
-const DAYN = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
-const toTime = m => pad(Math.floor(m / 60)) + ":" + pad(m % 60);
-const fromTime = s => { const [h, m] = String(s || "0:0").split(":").map(Number); return h * 60 + m; };
-function renderSettings() {
-  $("sStart").value = toTime(cfg.startAt); $("sEnd").value = toTime(cfg.endAt); $("sStop").value = cfg.stopMinutes;
-  $("sName").value = cfg.name; $("sUrl").value = cfg.scriptUrl;
-  const d = $("sDays"); d.textContent = "";
-  DAYN.forEach((n, i) => { const l = el("label"); const c = el("input"); c.type = "checkbox"; c.id = "day" + i; c.checked = !!((cfg.workDays >> i) & 1); l.append(c, document.createTextNode(n)); d.appendChild(l); });
-  renderPerms();
-}
-function renderPerms() {
-  const p = cfg.perms || JSON.parse(A.config()).perms;
-  const box = $("perms"); box.textContent = "";
-  const row = (label, ok, fix, fixLabel) => {
-    const r = el("div", "perm"); r.appendChild(el("span", "", label));
-    if (ok) r.appendChild(el("span", "s y", "Listo"));
-    else { const b = el("button", "small primary", fixLabel || "Activar"); b.onclick = fix; r.appendChild(b); }
-    box.appendChild(r);
-  };
-  row("Ubicación precisa", p.location, () => nat("permissions").then(x => { cfg.perms = x; renderPerms(); }));
-  row("Notificaciones y alertas", p.notifications, () => nat("permissions").then(x => { cfg.perms = x; renderPerms(); }));
-  row("Funcionar con pantalla apagada (batería sin restricción)", p.battery, () => A.battery());
-  row("Alarmas a la hora exacta", p.exactAlarm, () => A.exactAlarms());
-  if (!p.location || !p.notifications) row("Si negaste un permiso", false, () => A.appSettings(), "Abrir ajustes");
-}
-$("btnTest").onclick = () => { A.testAlert(); beep(); };
-$("btnSaveSettings").onclick = async () => {
-  let wd = 0; DAYN.forEach((n, i) => { if ($("day" + i).checked) wd |= 1 << i; });
-  const c = { startAt: fromTime($("sStart").value), endAt: fromTime($("sEnd").value), stopMinutes: Math.max(2, Math.min(30, +$("sStop").value || 5)), workDays: wd, name: $("sName").value.trim() || "Asbai Jimenez", scriptUrl: $("sUrl").value.trim(), plates: $("vPlacas").value.trim() };
-  A.setConfig(JSON.stringify(c)); cfg = JSON.parse(A.config());
-  const h = { mes: $("vMes").value.trim(), usuario: $("vUser").value.trim(), placas: $("vPlacas").value.trim(), tag: $("vTag").value.trim() };
-  const b = $("btnSaveSettings"); b.disabled = true; b.textContent = "Guardando…";
-  const r = cfg.scriptUrl ? await call("header", h) : { ok: true };
-  b.disabled = false; b.textContent = "Guardar ajustes";
-  renderConn();
-  if (r.ok) { banner("ok", "Ajustes guardados", "Alertas a las " + toTime(cfg.startAt) + " y " + toTime(cfg.endAt) + ".", null, "ok"); render(); loadSheet(); }
-  else banner("bad", "Los ajustes se guardaron en el teléfono, pero no en la hoja", r.error);
-};
-
-// Primera vez
-$("cfgSave").onclick = async () => {
-  const u = $("cfgUrl").value.trim();
-  if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(u)) { banner("bad", "Dirección no válida", "Debe empezar con https://script.google.com/ y terminar en /exec."); return; }
-  A.setConfig(JSON.stringify({ scriptUrl: u })); cfg = JSON.parse(A.config());
-  const b = $("cfgSave"); b.disabled = true; b.textContent = "Probando…";
-  const r = await call("ping");
-  b.disabled = false; b.textContent = "Probar y guardar";
-  if (!r.ok) { banner("bad", "No hubo respuesta correcta del servicio", r.error); return; }
-  banner("ok", "Conectado a tu hoja", "La conexión quedó guardada en la pestaña Ajustes.", null, "ok");
-  $("sUrl").value = cfg.scriptUrl; renderConn(); render(); showTab("hoy"); loadSheet(); nat("permissions").then(x => { cfg.perms = x; renderPerms(); });
-};
-
-// ---------- recordatorios dentro de la app ----------
-function checkReminders() {
-  const now = new Date(), mins = now.getHours() * 60 + now.getMinutes();
-  const work = !!((cfg.workDays >> now.getDay()) & 1);
-  if (!work || day.stage === "rest") return;
-  if (day.stage === "idle" && mins >= cfg.startAt) showAlert("start", "Aún no registras el inicio de jornada", "Toma la foto del odómetro al salir o marca el día como descanso.");
-  if (day.stage === "running" && mins >= cfg.endAt) showAlert("end", "Ya es hora de cerrar la jornada", "Toma la foto del odómetro al llegar.");
-  if (day.stage === "running" && day.date !== today()) showAlert("end", "La jornada del " + fechaLarga(day.date) + " sigue abierta", "Ciérrala con la foto del odómetro.");
-}
-
-// ---------- pintar ----------
-function render() {
-  const ready = !!cfg.scriptUrl;
-  $("setup").hidden = ready;
-  $("stepStart").hidden = !ready || day.stage !== "idle";
-  $("stepRun").hidden = !ready || day.stage !== "running";
-  $("stepDone").hidden = !ready || !(day.stage === "closed" || day.stage === "rest");
-  const pill = $("dayPill");
-  const P = { idle: ["idle", "Sin iniciar"], running: ["run", "Grabando recorrido"], closed: ["closed", "Día cerrado"], rest: ["rest", "Día de descanso"] }[day.stage];
-  pill.className = "pill " + P[0]; pill.textContent = P[1];
-  $("startWhen").textContent = fechaLarga(day.date);
-  if (day.stage === "closed") {
-    $("doneTitle").textContent = "Día cerrado";
-    const ini = num(day.entry.kmIni), fin = num(day.entry.kmFin);
-    const g = day.gpsKm ?? gpsKm(day.date);
-    const odoTot = day.done.reduce((t, x) => t + (x.km || 0), 0);
-    $("doneText").textContent = day.done.length + (day.done.length === 1 ? " tramo" : " tramos") + " · filas " + day.done.map(x => x.row).join(", ") + " · " + (day.done.length ? fmt(odoTot) + " km por odómetro" : (ini !== null && fin !== null ? fmt(fin - ini) + " km por odómetro" : "")) + (g !== null ? " · " + fmt(g, 1) + " km por GPS" : "") + (day.kml && day.kml.local ? " · KML en " + day.kml.local : "");
-    $("btnEarth2").hidden = false; $("btnNewDay").hidden = false;
-  }
-  if (day.stage === "rest") {
-    $("doneTitle").textContent = "Hoy es día de descanso";
-    $("doneText").textContent = "Registrado en la fila " + day.row + ". No sonarán alertas hoy.";
-    $("btnEarth2").hidden = true; $("btnNewDay").hidden = false;
-  }
-  ["ini", "fin", "ticket", "ticketCar", "odoCarga"].forEach(drawShot);
-  fillForm(); renderTrack();
-}
-
-// ---------- pestañas ----------
-function showTab(t) {
-  ["hoy", "reg", "aj"].forEach(k => { $("tab-" + k).hidden = k !== t; $("t-" + k).setAttribute("aria-selected", String(k === t)); });
-  save("bitacora-tab", t); window.scrollTo(0, 0);
-  if (t === "reg") renderList();
-}
-document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
-function renderConn() {
-  $("connState").textContent = cfg.scriptUrl ? "Conectada. La app escribe en tu hoja “Bitácora Flotilla”." : "Sin conectar. Pega la dirección que termina en /exec.";
-}
-$("btnPing").onclick = async () => {
-  const u = $("sUrl").value.trim();
-  if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(u)) { banner("bad", "Dirección no válida", "Debe empezar con https://script.google.com/ y terminar en /exec."); return; }
-  A.setConfig(JSON.stringify({ scriptUrl: u })); cfg = JSON.parse(A.config());
-  const b = $("btnPing"); b.disabled = true; b.textContent = "Probando…";
-  const r = await call("ping");
-  b.disabled = false; b.textContent = "Probar conexión";
-  if (r.ok) { banner("ok", "Conexión correcta", "", null, "ok"); render(); loadSheet(); } else banner("bad", "La conexión falló", r.error);
-  renderConn();
-};
-
-// ---------- arranque ----------
-$("who").textContent = cfg.name;
-renderSettings();
-persist();
-render();
-renderConn();
-showTab(cfg.scriptUrl ? (load("bitacora-tab", "hoy") || "hoy") : "hoy");
-if (cfg.scriptUrl) { setTimeout(autoRegisterPending, 1500); loadSheet(); nat("permissions").then(x => { cfg.perms = x; renderPerms(); }); }
-setTimeout(checkReminders, 800);
-})();
-</script>
+<script src="app.js"></script>
 </body>
 </html>
