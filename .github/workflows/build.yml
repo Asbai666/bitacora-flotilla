@@ -28,8 +28,8 @@ jobs:
       - name: Publicar descarga
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.1.${{ github.run_number }}
-          name: Bitácora Flotilla 2.1.${{ github.run_number }}
-          body: "v2.1 · botón Iniciar jornada arriba, lectura del odómetro mejorada (varias pasadas y tocar la zona), asunto en cada parada, carga de combustible con folio, fecha y hora, importe y litros leídos del ticket y fotos en las pestañas de Evidencia. Requiere actualizar el Code.gs del servicio de Google."
+          tag_name: v2.2.${{ github.run_number }}
+          name: Bitácora Flotilla 2.2.${{ github.run_number }}
+          body: "v2.2 · conectada de fábrica al servicio de Google de la hoja. · botón Iniciar jornada arriba, lectura del odómetro mejorada (varias pasadas y tocar la zona), asunto en cada parada, carga de combustible con folio, fecha y hora, importe y litros leídos del ticket y fotos en las pestañas de Evidencia. Requiere actualizar el Code.gs del servicio de Google."
           files: BitacoraFlotilla.apk
           make_latest: true
