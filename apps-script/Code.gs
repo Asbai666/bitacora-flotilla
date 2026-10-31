@@ -18,7 +18,7 @@ const CONFIG = {
 
 // Recuadros de las pestañas de Evidencia (fila, columna, filas, columnas)
 const BOXES = {
-  ticketCar:   { row: 3,  col: 1, rows: 10, cols: 3 },   // TICKET CAR   A3:C12
+  ticketCar:   { row: 3,  col: 1, rows: 10, cols: 3 },   // TICKET CAR (voucher de cobro)  A3:C12
   odometro:    { row: 3,  col: 4, rows: 10, cols: 3 },   // ODOMETRO     D3:F12
   ticketBomba: { row: 14, col: 1, rows: 10, cols: 3 },   // TICKET BOMBA A14:C23
   respaldo:    { row: 14, col: 4, rows: 10, cols: 3 }    // RESPALDO     D14:F23
@@ -35,7 +35,8 @@ function doPost(e) {
     if (req.token !== CONFIG.TOKEN) return json_({ ok: false, error: 'Clave de acceso incorrecta' });
     lock.waitLock(30000);
     switch (req.action) {
-      case 'ping':   fixTotals_(sh_()); return json_({ ok: true, version: 2 });
+      case 'ping':   fixTotals_(sh_()); return json_({ ok: true, version: 3 });
+      case 'carga':  return json_(carga_(req));
       case 'read':   return json_(read_());
       case 'save':   return json_(save_(req));
       case 'rest':   return json_(rest_(req));
@@ -144,14 +145,18 @@ function pickRow_(sh, requested) {
   return last + 1;
 }
 
-// Escribe la fila exactamente con las columnas de la hoja (A–O)
+// Escribe la fila exactamente con las columnas de la hoja (A–O).
+// Si el registro no trae datos de carga (A–E), se respetan los que ya tenga la fila.
 function writeRow_(sh, r, e) {
-  sh.getRange(r, 1, 1, 8).setValues([[
+  const hasCarga = ['factura', 'fCarga', 'importe', 'litros', 'ticket'].some(k => Object.prototype.hasOwnProperty.call(e, k));
+  if (hasCarga) sh.getRange(r, 1, 1, 5).setValues([[
     e.factura || '',                 // A  NO. FACTURA
     date_(e.fCarga),                 // B  FECHA DE CARGA
     num_(e.importe),                 // C  IMPORTE (PESOS $)
     num_(e.litros),                  // D  CANTIDAD (LITROS)
-    e.ticket || '',                  // E  # DE TICKET O FOLIO
+    e.ticket || ''                   // E  # DE TICKET O FOLIO
+  ]]);
+  sh.getRange(r, 6, 1, 3).setValues([[
     date_(e.fTras),                  // F  FECHA TRASLADO
     num_(e.kmIni),                   // G  KILOMETRAJE INICIAL
     num_(e.kmFin)                    // H  KILOMETRAJE FINAL
@@ -183,7 +188,7 @@ function save_(req) {
 
   // pestaña de evidencia cuando hay carga
   let evidenceTab = null;
-  if (num_(e.importe) !== '' && num_(e.importe) > 0) {
+  if (boxes.length && num_(e.importe) !== '' && num_(e.importe) > 0) {
     const data = sh.getRange(CONFIG.FIRST_ROW, 3, lastRow_(sh) - CONFIG.FIRST_ROW + 1, 1).getValues();
     const cargas = [];
     data.forEach((v, i) => { if (num_(v[0]) !== '' && num_(v[0]) > 0) cargas.push(CONFIG.FIRST_ROW + i); });
@@ -224,6 +229,85 @@ function monthFolder_(iso) {
   const name = (iso || Utilities.formatDate(new Date(), 'America/Mexico_City', 'yyyy-MM-dd')).slice(0, 7);
   const it = root.getFoldersByName(name);
   return it.hasNext() ? it.next() : root.createFolder(name);
+}
+
+// ---------- carga de combustible ----------
+// Escribe A–E en la fila que corresponde (sin tocar el traslado) y llena la pestaña de Evidencia
+// que le toca por orden de carga en el mes: 1a, 2a, 3a… (si no existe se crea copiando la 1a).
+function carga_(req) {
+  const sh = sh_();
+  const c = req.carga || {};
+  let r = req.row ? Number(req.row) : null;
+  if (r) {
+    if (r < CONFIG.FIRST_ROW || r > lastRow_(sh)) throw new Error('Fila fuera del rango de captura');
+  } else {
+    r = pickRow_(sh, null);
+    sh.getRange(r, 6).setValue(date_(req.date || c.fCarga));
+    if (!blank_(c.km)) sh.getRange(r, 7, 1, 2).setValues([[num_(c.km), num_(c.km)]]);
+    sh.getRange(r, 10).setValue('CARGA DE COMBUSTIBLE');
+  }
+  sh.getRange(r, 1, 1, 5).setValues([[c.factura || '', date_(c.fCarga), num_(c.importe), num_(c.litros), c.folio || '']]);
+  SpreadsheetApp.flush();
+
+  // fotos a Drive
+  const folder = monthFolder_(c.fCarga || req.date);
+  const links = {}, boxes = [];
+  (req.photos || []).forEach(p => {
+    if (!p || !p.b64) return;
+    const f = folder.createFile(Utilities.newBlob(Utilities.base64Decode(p.b64), 'image/jpeg', p.name || (p.slot + '.jpg')));
+    links[p.slot] = f.getUrl();
+    if (p.box && p.small) boxes.push({ box: p.box, b64: p.small, name: p.name });
+  });
+
+  // pestaña de evidencia según el orden de la carga en el mes
+  const data = sh.getRange(CONFIG.FIRST_ROW, 3, lastRow_(sh) - CONFIG.FIRST_ROW + 1, 1).getValues();
+  const cargas = [];
+  data.forEach((v, i) => { if (num_(v[0]) !== '' && num_(v[0]) > 0) cargas.push(CONFIG.FIRST_ROW + i); });
+  const n = Math.max(1, cargas.indexOf(r) + 1);
+  const ev = evidenceTab_(n);
+  ev.getRange('I4').setValue(num_(c.litros)).setNumberFormat('#,##0.000');
+  ev.getRange('J4').setValue(num_(c.importe)).setNumberFormat('$#,##0.00');
+  const when = dateTime_(c.fCarga, c.hora);
+  ev.getRange('I5').setValue(when).setNumberFormat(c.hora ? 'dd/mm/yyyy hh:mm' : 'dd/mm/yyyy');
+  const note = ['Folio: ' + (c.folio || '—'),
+    'Fecha y hora: ' + Utilities.formatDate(when || new Date(), ss_().getSpreadsheetTimeZone(), c.hora ? 'dd/MM/yyyy HH:mm' : 'dd/MM/yyyy'),
+    'Importe: $' + (num_(c.importe) === '' ? '—' : Number(num_(c.importe)).toFixed(2)),
+    'Litros: ' + (num_(c.litros) === '' ? '—' : num_(c.litros)),
+    c.km ? 'Odómetro: ' + c.km + ' km' : '',
+    c.factura ? 'Factura: ' + c.factura : '',
+    'Fila ' + r + ' de la Bitácora'].filter(Boolean).join(' · ');
+  const cr = commentsRow_(ev);
+  if (cr) ev.getRange(cr, 2).setValue(note);
+  boxes.forEach(b => placeImage_(ev, BOXES[b.box], b.b64, b.name));
+  return { ok: true, row: r, links: links, evidenceTab: ev.getName(), carga: n };
+}
+
+function evidenceTab_(n) {
+  const name = n + 'a Evidencia';
+  const ss = ss_();
+  let ev = ss.getSheetByName(name);
+  if (ev) return ev;
+  const tpl = ss.getSheetByName(CONFIG.EVIDENCE_TABS[0]);
+  ev = tpl.copyTo(ss).setName(name);
+  ev.getImages().forEach(img => img.remove());
+  ['I4', 'J4', 'I5'].forEach(a => ev.getRange(a).clearContent());
+  const cr = commentsRow_(ev); if (cr) ev.getRange(cr, 2).clearContent();
+  ev.getRange('H2').setValue('CARGA ' + n);
+  ss.setActiveSheet(ev); ss.moveActiveSheet(ss.getNumSheets());
+  return ev;
+}
+
+function commentsRow_(ev) {
+  const col = ev.getRange(20, 1, 12, 1).getValues();
+  for (let i = 0; i < col.length; i++) if (/COMENTARIOS/i.test(String(col[i][0]))) return 20 + i;
+  return null;
+}
+
+function dateTime_(iso, hora) {
+  if (!iso) return '';
+  const p = String(iso).split('-').map(Number);
+  const h = String(hora || '').match(/(\d{1,2}):(\d{2})/);
+  return h ? new Date(p[0], p[1] - 1, p[2], Number(h[1]), Number(h[2]), 0) : new Date(p[0], p[1] - 1, p[2], 12, 0, 0);
 }
 
 // ---------- día de descanso ----------

@@ -5,8 +5,11 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
@@ -68,19 +71,78 @@ class PhotoProcessor(private val ctx: Context) {
         writeMeta(slot, m)
         val preview = watermark(slot, m, who, plates)
 
-        // reconocimiento de texto
+        // reconocimiento de texto en varias versiones de la imagen (original, alto contraste, invertida y centro ampliado)
         val lines = JSONArray()
-        try {
-            val text = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS).process(InputImage.fromBitmap(bmp, 0)).await()
-            text.textBlocks.forEach { b -> b.lines.forEach { l ->
-                val box = l.boundingBox
-                lines.put(JSONObject().put("text", l.text).put("h", box?.height() ?: 0).put("y", box?.top ?: 0).put("x", box?.left ?: 0))
-            } }
-        } catch (e: Exception) { }
+        val odo = isOdometer(slot)
+        val variants = mutableListOf(bmp, filtered(bmp, 1.9f, false))
+        if (odo) {
+            variants += filtered(bmp, 1.9f, true)
+            val c = Rect((bmp.width * 0.15f).toInt(), (bmp.height * 0.2f).toInt(), (bmp.width * 0.85f).toInt(), (bmp.height * 0.8f).toInt())
+            variants += filtered(crop(bmp, c, 1800), 1.6f, false)
+        }
+        recognize(variants, lines)
+        variants.drop(1).forEach { it.recycle() }
         bmp.recycle()
 
-        return metaJson(m).put("slot", slot).put("preview", preview).put("lines", lines).put("imgH", 1600)
+        return metaJson(m).put("slot", slot).put("preview", preview).put("lines", lines).put("imgH", 1000)
     }
+
+    /** Vuelve a leer solo la zona que el usuario tocó en la foto (coordenadas 0–1). */
+    suspend fun ocrRegion(slot: String, cx: Double, cy: Double): JSONArray {
+        val src = BitmapFactory.decodeFile(base(slot).path) ?: throw IllegalStateException("Foto no disponible")
+        val w = src.width; val h = src.height
+        val rw = (w * 0.6).toInt(); val rh = (h * 0.3).toInt()
+        val left = (cx * w - rw / 2).toInt().coerceIn(0, w - rw)
+        val top = (cy * h - rh / 2).toInt().coerceIn(0, h - rh)
+        val c = crop(src, Rect(left, top, left + rw, top + rh), 2000)
+        src.recycle()
+        val variants = listOf(c, filtered(c, 1.9f, false), filtered(c, 1.9f, true), filtered(c, 2.6f, false))
+        val out = JSONArray()
+        recognize(variants, out)
+        variants.forEach { it.recycle() }
+        return out
+    }
+
+    private suspend fun recognize(variants: List<Bitmap>, out: JSONArray) {
+        val rec = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        variants.forEachIndexed { v, b ->
+            try {
+                val text = rec.process(InputImage.fromBitmap(b, 0)).await()
+                text.textBlocks.forEach { blk -> blk.lines.forEach { l ->
+                    val box = l.boundingBox
+                    out.put(JSONObject().put("text", l.text).put("v", v)
+                        .put("h", ((box?.height() ?: 0) * 1000.0 / b.height).roundToInt())
+                        .put("y", ((box?.top ?: 0) * 1000.0 / b.height).roundToInt())
+                        .put("x", ((box?.left ?: 0) * 1000.0 / b.width).roundToInt())
+                        .put("w", ((box?.width() ?: 0) * 1000.0 / b.width).roundToInt()))
+                } }
+            } catch (e: Exception) { }
+        }
+        try { rec.close() } catch (e: Exception) { }
+    }
+
+    /** Escala de grises con más contraste; invertida para pantallas con dígitos claros sobre fondo oscuro. */
+    private fun filtered(src: Bitmap, c: Float, invert: Boolean): Bitmap {
+        val out = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
+        val k = if (invert) -c else c
+        val t = if (invert) 255f - 128f * (1 - c) else 128f * (1 - c)
+        val r = 0.299f * k; val g = 0.587f * k; val b = 0.114f * k
+        val cm = ColorMatrix(floatArrayOf(r, g, b, 0f, t, r, g, b, 0f, t, r, g, b, 0f, t, 0f, 0f, 0f, 1f, 0f))
+        Canvas(out).drawBitmap(src, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG).apply { colorFilter = ColorMatrixColorFilter(cm) })
+        return out
+    }
+
+    /** Recorta y amplía la zona para que los dígitos se vean grandes. */
+    private fun crop(src: Bitmap, r: Rect, targetW: Int): Bitmap {
+        val part = Bitmap.createBitmap(src, r.left, r.top, max(1, r.width()), max(1, r.height()))
+        val s = min(3f, targetW.toFloat() / part.width)
+        if (s <= 1.05f) return part
+        val big = Bitmap.createScaledBitmap(part, (part.width * s).roundToInt(), (part.height * s).roundToInt(), true)
+        if (big != part) part.recycle()
+        return big
+    }
+
+    private fun isOdometer(slot: String) = slot == "ini" || slot == "fin" || slot == "odoCarga" || slot.startsWith("p")
 
     /** Vuelve a poner la marca de agua con otras coordenadas (cuando la foto no traía ubicación). */
     fun rewatermark(slot: String, lat: Double, lon: Double, who: String, plates: String): JSONObject {
@@ -185,7 +247,8 @@ class PhotoProcessor(private val ctx: Context) {
         }
         val LABELS = mapOf(
             "ini" to "Odómetro al salir", "fin" to "Odómetro al llegar",
-            "ticket" to "Ticket de bomba", "ticketCar" to "Ticket Car", "odoCarga" to "Odómetro en la carga"
+            "ticket" to "Ticket de bomba", "ticketCar" to "Voucher de cobro", "odoCarga" to "Odómetro en la carga",
+            "extra" to "Evidencia adicional"
         )
     }
 }

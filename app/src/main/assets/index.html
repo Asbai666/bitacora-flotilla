@@ -117,6 +117,16 @@ button:disabled{opacity:.45}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:12.5px;margin:0}
 .kv dt{color:var(--muted)} .kv dd{margin:0;text-align:right;font-family:var(--mono);overflow-wrap:anywhere}
 .choice{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.shot .tap{position:relative}
+.shot .tap::after{content:"Toca los números para leer solo esa zona";position:absolute;left:8px;bottom:8px;font-size:11px;background:rgba(0,0,0,.65);color:#fff;border-radius:6px;padding:3px 7px}
+.shot .tap.reading::after{content:"Leyendo la zona…";background:var(--fuel);color:#1b1203}
+.chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chips .hint{width:100%}
+.chip{font-family:var(--mono);font-size:14px;font-weight:700;padding:6px 10px;border-radius:999px;background:#0d1318;border:1px solid var(--line);color:var(--ink)}
+.chip.on{background:var(--fuel);color:#1b1203;border-color:transparent}
+.bigkm{font-family:var(--mono);font-size:30px;font-weight:700;text-align:center;letter-spacing:.08em;padding:12px}
+select{appearance:none}
+#setup{order:-2} #stepStart{order:-1}
 
 /* ---- tramos (paradas) ---- */
 .legs{display:grid;gap:0;position:relative}
@@ -243,6 +253,7 @@ details .card{border:0;padding:0;background:transparent}
 
   <!-- Paso: inicio -->
   <section class="card" id="stepStart" hidden>
+    <button class="go big" id="btnStart">Iniciar jornada</button>
     <div class="row2"><h2>Arranque del día</h2><span class="hint" id="startWhen"></span></div>
     <div class="note led" id="armBox" hidden>
       <b>Esperando la salida del domicilio</b>
@@ -253,21 +264,14 @@ details .card{border:0;padding:0;background:transparent}
       <div>Define tu <b>domicilio particular</b> para que cada día salga de ahí y la grabación empiece sola al salir.</div>
       <div class="actions"><button class="primary small" id="btnHomeHere">Estoy en mi domicilio: guardar ubicación</button></div>
     </div>
-    <div id="shot-ini"></div>
-    <div class="grid">
-      <label>Km inicial (odómetro)<input class="num" type="number" inputmode="numeric" id="kmIni"></label>
-      <label>Fecha<input type="date" id="fTras"></label>
-    </div>
-    <div class="note fuel" id="gapBox" hidden></div>
-    <label>Sale de<input id="de" placeholder="Domicilio particular"></label>
-    <label>Coordenadas de salida<input class="num" id="deC" placeholder="19.829600, -99.207200"></label>
-    <label>Asunto del día<input id="asunto" placeholder="Supervisión de OS, soporte en campo…"></label>
+    <p class="hint" id="startInfo">Toca Iniciar jornada: toma la foto del odómetro, la app lee el km inicial y empieza a grabar el recorrido desde tu domicilio.</p>
+    <input type="hidden" id="kmIni"><input type="hidden" id="fTras"><input type="hidden" id="de"><input type="hidden" id="deC"><input type="hidden" id="asunto">
     <div class="err" id="startErr" hidden></div>
-    <button class="go big" id="btnStart">Iniciar jornada y grabar</button>
     <div class="actions">
       <button class="ghost" id="btnArm">Grabar al salir de casa</button>
       <button class="warnbtn" id="btnRest">Día de descanso</button>
     </div>
+    <button class="ghost" id="btnCargaIdle">Registrar carga de combustible</button>
   </section>
 
   <!-- Paso: en ruta -->
@@ -282,30 +286,7 @@ details .card{border:0;padding:0;background:transparent}
       <button class="ghost small" id="btnShareKml">Exportar KML</button>
     </div>
 
-    <details id="cargaBox">
-      <summary><svg viewBox="0 0 24 24"><path d="M4 21V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v16"/><path d="M3 21h13"/><path d="M15 9h2a2 2 0 0 1 2 2v6a1.5 1.5 0 0 0 3 0V8l-3-3"/><path d="M7 7h5v4H7z"/></svg>Registrar carga de combustible</summary>
-      <div class="card">
-        <div class="pump" aria-live="polite">
-          <div class="r"><span class="k">Importe $</span><span class="v" id="pImp">0.00</span></div>
-          <div class="r"><span class="k">Litros</span><span class="v" id="pLit">0.000</span></div>
-          <div class="r"><span class="k">Precio / L</span><span class="v s" id="pPre">—</span></div>
-        </div>
-        <div id="shot-ticket"></div>
-        <div id="shot-ticketCar"></div>
-        <div id="shot-odoCarga"></div>
-        <div class="grid">
-          <label>Fecha de carga<input type="date" id="fCarga"></label>
-          <label>Importe ($)<input class="num" type="number" inputmode="decimal" step="0.01" id="importe"></label>
-          <label>Litros<input class="num" type="number" inputmode="decimal" step="0.01" id="litros"></label>
-        </div>
-        <div class="grid">
-          <label># Ticket o folio<input id="ticket"></label>
-          <label>No. factura<input id="factura"></label>
-        </div>
-        <div class="err" id="cargaErr" hidden></div>
-        <button class="primary" id="btnCarga">Guardar carga en la bitácora</button>
-      </div>
-    </details>
+    <button class="ghost" id="btnCarga"><span style="display:inline-flex;gap:8px;align-items:center"><svg viewBox="0 0 24 24" style="width:20px;height:20px;stroke:var(--fuel);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M4 21V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v16"/><path d="M3 21h13"/><path d="M15 9h2a2 2 0 0 1 2 2v6a1.5 1.5 0 0 0 3 0V8l-3-3"/><path d="M7 7h5v4H7z"/></svg>Registrar carga de combustible</span></button>
 
     <div class="sep" id="endBox">
       <h3>Fin de jornada</h3>
@@ -322,6 +303,7 @@ details .card{border:0;padding:0;background:transparent}
       </div>
       <button class="ghost small" id="btnUseGps" hidden>Usar km final estimado por GPS</button>
       <label>Llega a<input id="a" placeholder="Domicilio particular"></label>
+      <label>Asunto en el destino final<input id="aAsunto" placeholder="Regreso a domicilio"></label>
       <label>Coordenadas de llegada<input class="num" id="aC" placeholder="19.784100, -99.193200"></label>
       <button class="ghost small" id="btnArriveHome" hidden>Llegué a mi domicilio</button>
       <div class="err" id="endErr" hidden></div>
@@ -336,6 +318,7 @@ details .card{border:0;padding:0;background:transparent}
     <div class="actions">
       <button class="ghost" id="btnEarth2">Abrir en Google Earth</button>
       <button class="ghost" id="btnShareKml2">Exportar KML</button>
+      <button class="ghost" id="btnCargaDone">Registrar carga</button>
       <button class="ghost" id="btnNewDay" hidden>Empezar otra jornada</button>
     </div>
   </section>
@@ -350,6 +333,7 @@ details .card{border:0;padding:0;background:transparent}
       <div class="r"><span class="k">Importe $</span><span class="v s" id="mImp">0.00</span></div>
       <div class="r"><span class="k">Rendimiento km/L</span><span class="v s" id="mRend">—</span></div>
     </div>
+    <button class="primary" id="btnCargaReg">+ Registrar carga de combustible</button>
     <div class="list" id="list"><div class="empty">Conecta la hoja para ver los registros.</div></div>
     <button class="ghost small" id="btnReload">Actualizar desde la hoja</button>
     <div class="card">
@@ -404,7 +388,7 @@ details .card{border:0;padding:0;background:transparent}
       <label>Usuario (No. de empleado _ Nombre completo)<input id="vUser"></label>
       <label>TAG / No. de tarjeta<input id="vTag"></label>
       <div class="actions"><button class="primary" id="btnSaveSettings">Guardar ajustes</button></div>
-      <p class="hint" style="text-align:center">Bitácora Flotilla 2.0</p>
+      <p class="hint" style="text-align:center">Bitácora Flotilla 2.1</p>
     </div>
   </section>
 </div>

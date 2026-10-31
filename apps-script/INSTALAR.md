@@ -13,3 +13,10 @@
 El script solo acepta peticiones que traen la clave de la app, así que tener la URL no basta para escribir en tu hoja.
 
 Si después cambias el código: **Implementar → Administrar implementaciones → editar (lápiz) → Versión: Nueva versión → Implementar**. La URL se conserva.
+
+## Actualizar a la versión 3 (app 2.1: cargas con evidencias)
+
+1. Abre la hoja → **Extensiones → Apps Script**.
+2. Reemplaza todo el contenido de `Código.gs` con el nuevo `Code.gs` y guarda.
+3. **Implementar → Administrar implementaciones → lápiz → Versión: Nueva versión → Implementar.**
+4. Si Google pide permisos otra vez, acéptalos. La URL /exec no cambia.

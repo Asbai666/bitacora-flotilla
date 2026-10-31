@@ -251,6 +251,16 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface fun clearPhoto(slot: String) { photos.clear(slot) }
 
+        /** Lee solo la zona de la foto que se tocó (x, y entre 0 y 1). */
+        @JavascriptInterface fun ocrRegion(cb: Int, slot: String, x: Double, y: Double) {
+            lifecycleScope.launch {
+                try {
+                    val lines = withContext(Dispatchers.Default) { photos.ocrRegion(slot, x, y) }
+                    reply(cb, JSONObject().put("ok", true).put("lines", lines))
+                } catch (e: Throwable) { fail(cb, e) }
+            }
+        }
+
         @JavascriptInterface fun location(cb: Int) = runOnUiThread {
             ensure(basePerms()) {
                 lifecycleScope.launch {
@@ -374,10 +384,11 @@ class MainActivity : AppCompatActivity() {
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
                     val payload = JSONObject(json)
-                    if (action == "save") {
+                    if (action == "save" || action == "carga") {
                         val list = payload.optJSONArray("photoSlots") ?: JSONArray()
                         val arr = JSONArray()
-                        val date = payload.optJSONObject("entry")?.optString("fTras")?.ifEmpty { null } ?: Prefs.today()
+                        val date = payload.optJSONObject("entry")?.optString("fTras")?.ifEmpty { null }
+                            ?: payload.optJSONObject("carga")?.optString("fCarga")?.ifEmpty { null } ?: Prefs.today()
                         for (i in 0 until list.length()) {
                             val it = list.getJSONObject(i); val slot = it.getString("slot")
                             val f = photos.marked(slot); if (!f.exists()) continue

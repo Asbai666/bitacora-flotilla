@@ -24,7 +24,14 @@ if (!A) { document.body.innerHTML = "<p style='padding:20px;color:#fff'>Abre est
 let cbSeq = 1; const cbs = {};
 window.__cb = (id, s) => { const f = cbs[id]; delete cbs[id]; if (f) f(JSON.parse(s)); };
 const nat = (fn, ...args) => new Promise(res => { const id = cbSeq++; cbs[id] = res; A[fn](id, ...args); });
-const call = (action, payload) => nat("call", action, JSON.stringify(payload || {}));
+const call = async (action, payload) => {
+  payload = payload || {};
+  if (action === "save" && payload.entry && !payload.keepCarga) payload.entry = stripCarga(payload.entry);
+  delete payload.keepCarga;
+  const r = await nat("call", action, JSON.stringify(payload));
+  if (!r.ok && /Acci[oó]n desconocida/.test(r.error || "")) r.error = "El servicio de Google es de una versión anterior. Actualízalo (Extensiones → Apps Script → pega el nuevo Code.gs → Implementar → Nueva versión).";
+  return r;
+};
 
 // ---------- estado ----------
 const DKEY = "bitacora-dia-v1";
@@ -32,13 +39,18 @@ const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; 
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
 let cfg = JSON.parse(A.config());
 let sheet = { rows: [], header: {}, firstFree: null, lastKm: null, loaded: false };
-const FIELDS = ["fTras", "kmIni", "kmFin", "asunto", "de", "deC", "a", "aC", "fCarga", "importe", "litros", "ticket", "factura"];
+const FIELDS = ["fTras", "kmIni", "kmFin", "asunto", "de", "deC", "a", "aC"];
+const CARGAF = ["fCarga", "importe", "litros", "ticket", "factura"];
+const ROWF = FIELDS.concat(CARGAF);
 const ADJ = "AJUSTE DE ODÓMETRO · recorrido sin registro";
 
 function freshDay() { return { date: today(), stage: "idle", row: null, entry: { fTras: today() }, photos: {}, cargaSaved: false, tramoStart: 0, stopsDone: {}, done: [], gapOff: false }; }
 let day = load(DKEY, null);
 if (!day || (day.date !== today() && day.stage !== "running")) day = freshDay();
 day.stopsDone = day.stopsDone || {}; day.done = day.done || [];
+// desde la 2.1 la carga va aparte: los registros del recorrido no tocan las columnas A–E
+const stripCarga = e => { const o = Object.assign({}, e || {}); CARGAF.forEach(k => delete o[k]); return o; };
+day.entry = stripCarga(day.entry); day.done.forEach(d => { if (d.entry) d.entry = stripCarga(d.entry); });
 const RGKEY = "bitacora-gps-filas";
 const rowGps = load(RGKEY, {});
 const tramoKm = () => { try { return A.trackKm(day.date, day.tramoStart || 0, 0); } catch (e) { return null; } };
@@ -102,48 +114,97 @@ function goEnd() { showTab("hoy"); setTimeout(() => $("endBox").scrollIntoView({
 window.onBack = () => { if (!$("modal").hidden) { closeModal(); return true; } return false; };
 
 // ---------- lectura de fotos (texto reconocido en el teléfono) ----------
-// En pantallas de odómetro el reconocimiento confunde O→0, I/l→1, S→5, B→8, Z→2.
+// El reconocimiento se hace en varias versiones de la foto (v): original, alto contraste, invertida y centro ampliado.
+// En pantallas de 7 segmentos se confunden letras con dígitos: O→0, I/l→1, S→5, B→8, Z→2, G/b→6, g/q→9.
+const CONF = { O: "0", o: "0", Q: "0", D: "0", U: "0", I: "1", l: "1", "|": "1", "!": "1", i: "1", S: "5", s: "5", B: "8", Z: "2", z: "2", G: "6", b: "6", g: "9", q: "9", T: "7" };
 function fixDigits(tok) {
-  const real = (tok.match(/\d/g) || []).length;
-  if (real < 2) return tok;
-  return tok.replace(/[OoQD]/g, "0").replace(/[Il|!]/g, "1").replace(/[Ss]/g, "5").replace(/B/g, "8").replace(/Z/g, "2").replace(/G/g, "6");
+  const t = tok.replace(/[^0-9A-Za-z|!]/g, "");
+  if (t.length < 3 || t.length > 8) return tok;
+  const real = (t.match(/\d/g) || []).length, conf = t.split("").filter(c => CONF[c]).length;
+  if (real + conf < t.length || real < Math.ceil(t.length / 3)) return tok;
+  return t.split("").map(c => CONF[c] || c).join("");
 }
-function readOdometer(lines, lastKm) {
-  const cands = [];
-  lines.forEach(l => {
-    const up = l.text.toUpperCase();
-    if (/TRIP|ODO\s*B|RPM|°|:\d\d|\bA\b\s*\d|\bB\b\s*\d/.test(up) && !/ODO(?!\s*B)/.test(up)) return;   // parciales, reloj, temperatura
-    const t = up.split(/\s+/).map(fixDigits).join(" ");
-    (t.match(/\d[\d ,.]{1,9}\d/g) || []).forEach(raw => {
-      if (/[.,]\d$/.test(raw.trim())) return;                // 1234.5 suele ser el parcial
-      const digits = raw.replace(/[^\d]/g, "");
-      if (digits.length < 3 || digits.length > 7) return;
-      const v = parseInt(digits, 10);
-      let score = (l.h || 10) + (/KM/.test(up) ? 25 : 0) + (/ODO/.test(up) ? 25 : 0) + (digits.length >= 5 ? 14 : 0) + digits.length * 2;
-      if (lastKm) { if (v >= lastKm && v < lastKm + 2500) score += 70; else if (v < lastKm) score -= 45; else score -= 15; }
-      cands.push({ v, score });
+function rowsOf(lines) {
+  // une piezas de texto a la misma altura (el odómetro a veces sale partido: "56" "565")
+  const byV = {};
+  lines.forEach(l => (byV[l.v || 0] = byV[l.v || 0] || []).push(l));
+  const out = [];
+  Object.keys(byV).forEach(v => {
+    const L = byV[v].slice().sort((a, b) => a.y - b.y);
+    const used = new Set();
+    L.forEach((l, i) => {
+      if (used.has(i)) return;
+      const row = [l]; used.add(i);
+      L.forEach((m, j) => { if (!used.has(j) && Math.abs((m.y + m.h / 2) - (l.y + l.h / 2)) < Math.max(l.h, m.h) * 0.5) { row.push(m); used.add(j); } });
+      row.sort((a, b) => a.x - b.x);
+      out.push({ v: +v, h: Math.max(...row.map(r => r.h || 0)), parts: row.map(r => r.text), text: row.map(r => r.text).join(" ") });
     });
   });
-  cands.sort((a, b) => b.score - a.score);
-  return cands.length ? cands[0].v : null;
+  return out;
 }
-function readTicket(lines) {
+function odoCands(lines, ref, regionBonus) {
+  const map = {};
+  const add = (val, score, v) => { const k = String(val); const c = map[k] || (map[k] = { v: val, score: 0, seen: new Set() }); c.score = Math.max(c.score, score); c.seen.add(v); };
+  const consider = (text, h, v, joined) => {
+    const up = text.toUpperCase();
+    if (/TRIP|ODO\s*B|RPM|°|\d:\d\d|KM\/H|MPH|AVG|PROM|L\/100|KM\/L/.test(up) && !/\bODO\b(?!\s*B)/.test(up)) return;
+    const t = text.split(/\s+/).map(fixDigits).join(" ");
+    (t.match(/\d[\d ,.]{1,9}\d/g) || []).forEach(raw => {
+      if (/[.,]\d$/.test(raw.trim())) return;                 // 1234.5 suele ser el parcial
+      const digits = raw.replace(/[^\d]/g, "");
+      if (digits.length < 3 || digits.length > 7) return;
+      const val = parseInt(digits, 10);
+      if (val < 100) return;
+      let sc = Math.min(120, h || 10) * 0.6 + (/KM/.test(up) ? 25 : 0) + (/ODO/.test(up) ? 30 : 0);
+      sc += digits.length >= 5 ? 40 : digits.length === 4 ? 12 : -25;
+      if (joined) sc -= 6;
+      if (ref) { if (val >= ref && val <= ref + 3000) sc += 80 - Math.min(40, (val - ref) / 50); else if (val < ref) sc -= 60; else sc -= 20; }
+      add(val, sc + (regionBonus || 0), v);
+    });
+  };
+  lines.forEach(l => consider(l.text, l.h, l.v || 0, false));
+  rowsOf(lines).forEach(r => { if (r.parts.length > 1) consider(r.parts.join(""), r.h, r.v, true); });
+  return Object.values(map).map(c => ({ v: c.v, score: c.score + (c.seen.size - 1) * 15 })).sort((a, b) => b.score - a.score).slice(0, 5);
+}
+function readOdometer(lines, ref) { const c = odoCands(lines, ref); return c.length ? c[0].v : null; }
+
+function readTicketOne(lines) {
   const L = lines.slice().sort((a, b) => (a.y - b.y) || (a.x - b.x)).map(l => l.text.toUpperCase());
   const out = {};
-  const numIn = s => { const m = String(s).match(/\$?\s*(\d{1,3}(?:[,\s]\d{3})*|\d+)[.,](\d{2,3})\b/); return m ? parseFloat(m[1].replace(/[,\s]/g, "") + "." + m[2]) : null; };
-  const near = (re, fn) => { for (let i = 0; i < L.length; i++) if (re.test(L[i])) { const v = fn(L[i].replace(re, " ")) ?? (L[i + 1] ? fn(L[i + 1]) : null); if (v !== null && v !== undefined) return v; } return null; };
-  out.importe = near(/TOTAL\s*(A\s*PAGAR)?|IMPORTE|MONTO|PAGAR/, numIn);
-  out.litros = near(/LITROS|LTS\.?|VOLUMEN|CANTIDAD/, numIn);
+  const numIn = s => { const m = String(s).replace(/O/g, "0").match(/\$?\s*(\d{1,3}(?:[,\s]\d{3})*|\d+)[.,](\d{2,3})\b/); return m ? parseFloat(m[1].replace(/[,\s]/g, "") + "." + m[2]) : null; };
+  const near = (res, fn) => { for (const re of res) for (let i = 0; i < L.length; i++) if (re.test(L[i])) { const v = fn(L[i].replace(re, " ")) ?? (L[i + 1] ? fn(L[i + 1]) : null); if (v !== null && v !== undefined) return v; } return null; };
+  out.importe = near([/TOTAL\s*(A\s*PAGAR)?/, /IMPORTE/, /MONTO/, /PAGAR|VENTA/], numIn);
+  out.litros = near([/LITROS/, /\bLTS?\b\.?/, /VOLUMEN|VOL\./, /CANTIDAD|CANT\./], numIn);
   if (out.litros === null) { for (const s of L) { const m = s.match(/(\d+[.,]\d{1,3})\s*(L|LT|LTS|LITROS)\b/); if (m) { out.litros = parseFloat(m[1].replace(",", ".")); break; } } }
+  out.precio = near([/PRECIO|P\.?\s*UNIT|\$\s*\/\s*L/], numIn);
   if (out.importe === null) { let best = null; L.forEach(s => { if (/\$/.test(s)) { const v = numIn(s); if (v !== null && (best === null || v > best)) best = v; } }); out.importe = best; }
+  // deriva el dato que falte con precio por litro
+  if (out.litros === null && out.importe && out.precio) out.litros = Math.round(out.importe / out.precio * 1000) / 1000;
+  if (out.importe === null && out.litros && out.precio) out.importe = Math.round(out.litros * out.precio * 100) / 100;
   for (const s of L) {
     let m = s.match(/(20\d\d)[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
     if (m) { out.fecha = m[1] + "-" + pad(m[2]) + "-" + pad(m[3]); break; }
-    m = s.match(/(?<!\d)(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})(?!\d)/);
-    if (m) { let y = +m[3]; if (y < 100) y += 2000; const mo = +m[2], d = +m[1]; if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) { out.fecha = y + "-" + pad(mo) + "-" + pad(d); break; } }
+    m = s.match(/(?<!\d)(\d{1,2})[\/\-.](\d{1,2}|[A-Z]{3})[\/\-.](\d{2,4})(?!\d)/);
+    if (m) {
+      let y = +m[3]; if (y < 100) y += 2000;
+      let mo = /^\d+$/.test(m[2]) ? +m[2] : ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC"].indexOf(m[2]) + 1;
+      const d = +m[1]; if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) { out.fecha = y + "-" + pad(mo) + "-" + pad(d); break; }
+    }
   }
-  out.folio = near(/FOLIO|NO\.?\s*TICKET|TICKET|TRANSACCI[OÓ]N|TRANS\.?|TKT/, s => { const m = s.match(/[#:\s]*([A-Z0-9][A-Z0-9\-]{3,})/); return m && /\d/.test(m[1]) ? m[1] : null; });
-  out.factura = near(/FACTURA/, s => { const m = s.match(/[#:\s]*([A-Z0-9][A-Z0-9\-]{3,})/); return m && /\d/.test(m[1]) ? m[1] : null; });
+  for (const s of L) {
+    const m = s.match(/(?<!\d)([01]?\d|2[0-3])[:.]([0-5]\d)(?::[0-5]\d)?\s*(A\.?\s?M\.?|P\.?\s?M\.?)?/);
+    if (m && !/\$|LITRO|TOTAL/.test(s)) { let h = +m[1]; const pm = m[3] && /P/.test(m[3]); if (pm && h < 12) h += 12; if (m[3] && !pm && h === 12) h = 0; out.hora = pad(h) + ":" + m[2]; break; }
+  }
+  const code = s => { const m = s.match(/[#:\s.]*([A-Z0-9][A-Z0-9\-]{3,})/); return m && /\d/.test(m[1]) ? m[1] : null; };
+  out.folio = near([/FOLIO/, /NO\.?\s*(DE\s*)?TICKET|TICKET/, /TRANSACCI[OÓ]N|TRANS\.?|NO\.?\s*OPERACI[OÓ]N|OPERACI[OÓ]N/, /TKT|REF\.?|REFERENCIA/], code);
+  out.factura = near([/FACTURA/], code);
+  return out;
+}
+function readTicket(lines) {
+  const byV = {}; lines.forEach(l => (byV[l.v || 0] = byV[l.v || 0] || []).push(l));
+  const res = Object.keys(byV).sort().map(v => readTicketOne(byV[v]));
+  const out = {};
+  ["importe", "litros", "precio", "fecha", "hora", "folio", "factura"].forEach(k => { const r = res.find(x => x[k] !== null && x[k] !== undefined); out[k] = r ? r[k] : null; });
   return out;
 }
 
@@ -151,18 +212,35 @@ function readTicket(lines) {
 const SLOTS = {
   ini: { title: "Odómetro al salir", sub: "lee el km inicial" },
   fin: { title: "Odómetro al llegar", sub: "lee el km final" },
-  ticket: { title: "Ticket de bomba", sub: "importe, litros y folio" },
-  ticketCar: { title: "Ticket Car", sub: "comprobante (opcional)" },
-  odoCarga: { title: "Odómetro en la carga", sub: "opcional, va a la evidencia" }
+  ticket: { title: "Ticket de bomba", sub: "folio, fecha, importe y litros" },
+  ticketCar: { title: "Voucher de cobro", sub: "comprobante de la tarjeta" },
+  odoCarga: { title: "Odómetro en la carga", sub: "lee el km" },
+  extra: { title: "Evidencia adicional", sub: "opcional (respaldo)" }
 };
+const isOdoSlot = slot => slot === "ini" || slot === "fin" || slot === "odoCarga" || slot[0] === "p";
 function slotInfo(slot) {
   if (SLOTS[slot]) return SLOTS[slot];
   if (slot[0] === "p") return { title: "Odómetro en la parada", sub: "lee el km de la parada" };
   if (slot[0] === "l") return { title: "Foto del lugar", sub: "hora y coordenadas" };
   return { title: slot, sub: "" };
 }
-function setModal(id, v) { const e = $(id); if (!e || v === null || v === undefined || v === "") return; e.value = v; e.classList.add("auto"); e.classList.remove("bad"); }
-function autoFill(id, v) { if (v === null || v === undefined || v === "") return; $(id).value = v; $(id).classList.add("auto"); $(id).classList.remove("bad"); syncEntry(); }
+function setModal(id, v) { const e = $(id); if (!e || v === null || v === undefined || v === "") return; e.value = v; e.classList.add("auto"); e.classList.remove("bad"); e.dispatchEvent(new Event("change")); }
+function autoFill(id, v) { if (v === null || v === undefined || v === "" || !$(id)) return; $(id).value = v; $(id).classList.add("auto"); $(id).classList.remove("bad"); syncEntry(); }
+function odoRef(slot) {
+  if (slot === "ini") return lastKnownKm();
+  if (slot[0] === "p") { const st = day.stopsDone[Number(slot.slice(1))]; return st && st.km ? st.km - 200 : (num(day.entry.kmIni) ?? lastKnownKm()); }
+  return num(day.entry.kmIni) ?? lastKnownKm();
+}
+// el km leído va al campo que corresponde a cada foto
+function applyOdo(slot, km) {
+  const p = day.photos[slot]; if (p) { p.km = km; p.read = km !== null ? fmt(km) + " km" : ""; p.note = km === null ? "No se distingue el odómetro: toca los números en la foto o escribe el km." : ""; }
+  if (km === null) return;
+  if (slot === "ini") { autoFill("kmIni", km); setModal("m_kmIni", km); renderGap(); }
+  else if (slot === "fin") autoFill("kmFin", km);
+  else if (slot === "odoCarga") setModal("c_km", km);
+  else if (slot[0] === "p") setModal("m_km", km);
+  updateOdo(); renderCluster();
+}
 
 function drawShot(slot) {
   const box = $("shot-" + slot); if (!box) return;
@@ -172,20 +250,26 @@ function drawShot(slot) {
   s.appendChild(t);
   if (p && p.busy) s.appendChild(el("div", "hint", "Leyendo la foto…"));
   if (p && p.preview) {
-    const img = el("img"); img.src = p.preview; img.alt = slotInfo(slot).title; s.appendChild(img);
+    const wrap = el("div", isOdoSlot(slot) ? "tap" : "");
+    const img = el("img"); img.src = p.preview; img.alt = slotInfo(slot).title; wrap.appendChild(img); s.appendChild(wrap);
+    if (isOdoSlot(slot)) img.onclick = ev => readZone(slot, ev, wrap);
     if (p.read) s.appendChild(el("div", "read", p.read));
+    if (isOdoSlot(slot) && p.cands && p.cands.length > 1) {
+      const ch = el("div", "chips"); ch.appendChild(el("span", "hint", "¿No es ese? Elige la lectura correcta:"));
+      p.cands.forEach(c => { const b = el("button", "chip" + (c.v === p.km ? " on" : ""), fmt(c.v)); b.onclick = () => { applyOdo(slot, c.v); persist(); drawShot(slot); }; ch.appendChild(b); });
+      s.appendChild(ch);
+    }
     const kv = el("dl", "kv");
     const add = (k, v) => { kv.append(el("dt", "", k), el("dd", "", v)); };
     add("Fecha y hora", new Date(p.time).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" }) + (p.timeSource === "foto" ? "" : " *"));
     add("Coordenadas", coordStr(p.lat, p.lon) || "—");
     if (p.address) add("Lugar", p.address);
     s.appendChild(kv);
-    if (p.timeSource !== "foto") s.appendChild(el("div", "hint", "* La foto no traía hora de captura; se usó la hora actual."));
     if (p.note) s.appendChild(el("div", "err", p.note));
-    if (typeof p.lat !== "number") {
+    if (typeof p.lat !== "number" && (isOdoSlot(slot) || slot[0] === "l")) {
       const r = el("div", "actions");
-      const here = el("button", "small primary", "Usar mi ubicación actual"); here.onclick = () => locateFor(slot);
-      r.appendChild(here); s.appendChild(el("div", "hint", "La foto no trae ubicación. Agrégala para la marca de agua:")); s.appendChild(r);
+      const here = el("button", "small ghost", "Agregar mi ubicación a la foto"); here.onclick = () => locateFor(slot);
+      r.appendChild(here); s.appendChild(r);
     }
     if (p.uploaded) s.appendChild(el("div", "hint", "Subida a Drive ✓"));
   }
@@ -196,50 +280,62 @@ function drawShot(slot) {
   box.appendChild(s);
 }
 
+// Lee de nuevo solo la zona tocada (útil cuando la foto trae reloj, temperatura o el parcial)
+async function readZone(slot, ev, wrap) {
+  const r = ev.target.getBoundingClientRect();
+  const x = (ev.clientX - r.left) / r.width, y = (ev.clientY - r.top) / r.height;
+  wrap.classList.add("reading");
+  const res = await nat("ocrRegion", slot, x, y);
+  wrap.classList.remove("reading");
+  if (!res.ok) { banner("bad", "No se pudo leer la zona", res.error); return; }
+  const p = day.photos[slot];
+  const cands = odoCands(res.lines || [], odoRef(slot), 30);
+  // mezcla con las lecturas anteriores, dando prioridad a la zona tocada
+  const merged = cands.concat((p.cands || []).filter(c => !cands.some(x => x.v === c.v)).map(c => ({ v: c.v, score: c.score - 40 })));
+  p.cands = merged.sort((a, b) => b.score - a.score).slice(0, 5);
+  applyOdo(slot, cands.length ? cands[0].v : (p.km ?? null));
+  if (!cands.length) p.note = "No encontré números en esa zona; toca justo sobre el kilometraje.";
+  persist(); drawShot(slot);
+}
+
 async function takePhoto(slot, source) {
   const prev = day.photos[slot];
   day.photos[slot] = Object.assign({}, prev || {}, { busy: true }); drawShot(slot);
   const r = await nat("photo", slot, source);
   if (!r.ok) { if (prev) day.photos[slot] = prev; else delete day.photos[slot]; drawShot(slot); if (!r.cancelled) banner("bad", "No se pudo procesar la foto", r.error); return; }
   const p = { preview: r.preview, lat: r.lat, lon: r.lon, time: r.time, timeSource: r.timeSource, address: r.address || "", uploaded: false };
+  day.photos[slot] = p;
   const lines = r.lines || [];
   const atHome = nearHome(r.lat, r.lon);
   const place = atHome ? homeLabel() : r.address;
-  if (slot === "ini" || slot === "fin" || slot === "odoCarga") {
-    const ref = slot === "ini" ? lastKnownKm() : (num(day.entry.kmIni) ?? lastKnownKm());
-    const km = readOdometer(lines, ref);
-    p.read = km !== null ? fmt(km) + " km" : "";
-    if (km === null) p.note = "No se distingue el odómetro; escribe el km o toma la foto más cerca y sin reflejos.";
+  if (isOdoSlot(slot)) {
+    p.cands = odoCands(lines, odoRef(slot));
+    applyOdo(slot, p.cands.length ? p.cands[0].v : null);
     if (slot === "ini") {
-      autoFill("kmIni", km); autoFill("fTras", isoOf(new Date(r.time)));
-      if (atHome) { autoFill("de", homeLabel()); autoFill("deC", homeCoords()); }
-      else { autoFill("deC", coordStr(r.lat, r.lon)); autoFill("de", r.address); }
-      setModal("m_kmIni", km);
+      autoFill("fTras", isoOf(new Date(r.time)));
+      const de = atHome ? homeLabel() : r.address, deC = atHome ? homeCoords() : coordStr(r.lat, r.lon);
+      if (!(home() && isHomeText(day.entry.de)) || atHome) { autoFill("de", de); autoFill("deC", deC); setModal("m_de", de); setModal("m_deC", deC); }
     }
     if (slot === "fin") {
-      autoFill("kmFin", km);
-      if (atHome) { autoFill("a", homeLabel()); autoFill("aC", homeCoords()); }
+      if (atHome) { autoFill("a", homeLabel()); autoFill("aC", homeCoords()); autoFill("aAsunto", "Regreso a domicilio"); }
       else { autoFill("aC", coordStr(r.lat, r.lon)); autoFill("a", r.address); }
     }
-  } else if (slot[0] === "p") {
-    const st = day.stopsDone[Number(slot.slice(1))];
-    const km = readOdometer(lines, st && st.km ? st.km : (num(day.entry.kmIni) ?? lastKnownKm()));
-    p.read = km !== null ? fmt(km) + " km" : "";
-    if (km === null) p.note = "No se distingue el odómetro; escribe el km o toma la foto más cerca.";
-    setModal("m_km", km);
-    const l = day.photos["l" + slot.slice(1)];
-    if (!l || typeof l.lat !== "number") { setModal("m_aC", atHome ? homeCoords() : coordStr(r.lat, r.lon)); setModal("m_a", place); }
+    if (slot[0] === "p") { const l = day.photos["l" + slot.slice(1)]; if (!l || typeof l.lat !== "number") { setModal("m_aC", atHome ? homeCoords() : coordStr(r.lat, r.lon)); setModal("m_a", place); } }
   } else if (slot[0] === "l") {
     setModal("m_aC", atHome ? homeCoords() : coordStr(r.lat, r.lon)); setModal("m_a", place);
-  } else if (slot === "ticket") {
+  } else if (slot === "ticket" || slot === "ticketCar") {
     const t = readTicket(lines);
-    const bits = []; if (t.importe) bits.push(money(t.importe)); if (t.litros) bits.push(fmt(t.litros, 2) + " L"); if (t.folio) bits.push("folio " + t.folio);
+    const bits = []; if (t.folio) bits.push("Folio " + t.folio); if (t.importe) bits.push(money(t.importe)); if (t.litros) bits.push(fmt(t.litros, 3) + " L");
     p.read = bits.join(" · ");
-    if (!t.importe && !t.litros) p.note = "No pude leer importe ni litros; escríbelos.";
-    autoFill("importe", t.importe); autoFill("litros", t.litros); autoFill("ticket", t.folio); autoFill("factura", t.factura);
-    autoFill("fCarga", t.fecha || isoOf(new Date(r.time)));
+    if (!t.importe && !t.litros && slot === "ticket") p.note = "No pude leer importe ni litros; escríbelos o toma la foto más de frente y con luz.";
+    // el ticket de bomba manda; el voucher solo completa lo que falte
+    const put = (id, v) => { if (v === null || v === undefined) return; if (slot === "ticket" || !has($(id) && $(id).value)) setModal(id, v); };
+    put("c_folio", t.folio); put("c_importe", t.importe); put("c_litros", t.litros); put("c_factura", t.factura);
+    put("c_fecha", t.fecha || isoOf(new Date(r.time)));
+    put("c_hora", t.hora || (r.timeSource === "foto" ? hm(r.time) : null));
+    saveCargaForm();
   }
-  day.photos[slot] = p; persist(); drawShot(slot); updateOdo(); updateStopModal(); renderGap(); updatePump(); renderCluster();
+  persist(); drawShot(slot); updateOdo(); renderGap(); updatePump(); renderCluster();
 }
 
 async function locateFor(slot) {
@@ -249,16 +345,16 @@ async function locateFor(slot) {
   if (!w.ok) { banner("bad", "No se pudo actualizar la foto", w.error); return; }
   Object.assign(day.photos[slot], { preview: w.preview, lat: r.lat, lon: r.lon, address: r.address || "", uploaded: false });
   const atHome = nearHome(r.lat, r.lon);
-  if (slot === "ini") { autoFill("deC", atHome ? homeCoords() : coordStr(r.lat, r.lon)); autoFill("de", atHome ? homeLabel() : r.address); }
+  if (slot === "ini") { const de = atHome ? homeLabel() : r.address, deC = atHome ? homeCoords() : coordStr(r.lat, r.lon); autoFill("deC", deC); autoFill("de", de); setModal("m_de", de); setModal("m_deC", deC); }
   if (slot === "fin") { autoFill("aC", atHome ? homeCoords() : coordStr(r.lat, r.lon)); autoFill("a", atHome ? homeLabel() : r.address); }
   if (slot[0] === "p" || slot[0] === "l") { setModal("m_aC", coordStr(r.lat, r.lon)); setModal("m_a", atHome ? homeLabel() : r.address); }
   persist(); drawShot(slot);
 }
 
 // ---------- formulario del día ----------
-function fillForm() { FIELDS.forEach(k => { $(k).value = day.entry[k] ?? ""; }); updateOdo(); updatePump(); }
+function fillForm() { FIELDS.forEach(k => { $(k).value = day.entry[k] ?? ""; }); updateOdo(); }
 function syncEntry() { FIELDS.forEach(k => day.entry[k] = $(k).value.trim()); persist(); }
-FIELDS.forEach(k => $(k).addEventListener("input", () => { $(k).classList.remove("auto", "bad"); syncEntry(); updateOdo(); updatePump(); if (k === "kmIni") { renderGap(); renderCluster(); } }));
+FIELDS.forEach(k => $(k).addEventListener("input", () => { $(k).classList.remove("auto", "bad"); syncEntry(); updateOdo(); if (k === "kmIni") { renderGap(); renderCluster(); } }));
 function drums(box, value, digits, withDec) {
   box.textContent = "";
   if (value === null || value === undefined || isNaN(value)) { box.classList.add("empty"); for (let i = 0; i < digits; i++) box.appendChild(el("span", "", "-")); return; }
@@ -273,10 +369,11 @@ function updateOdo() {
   updateCompare();
 }
 function updatePump() {
-  const imp = num($("importe").value), lit = num($("litros").value);
-  $("pImp").textContent = (imp || 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  $("pLit").textContent = (lit || 0).toLocaleString("es-MX", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-  $("pPre").textContent = imp && lit ? (imp / lit).toFixed(2) : "—";
+  if (!$("c_importe")) return;
+  const imp = num($("c_importe").value), lit = num($("c_litros").value);
+  $("c_pImp").textContent = (imp || 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  $("c_pLit").textContent = (lit || 0).toLocaleString("es-MX", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  $("c_pPre").textContent = imp && lit ? (imp / lit).toFixed(2) : "—";
 }
 function need(ids, errEl, msg) {
   const bad = ids.filter(([id, ok]) => !ok(day.entry[id]));
@@ -287,10 +384,8 @@ function need(ids, errEl, msg) {
 
 function slotsToSend(list) { return list.filter(s => day.photos[s.slot] && day.photos[s.slot].preview && !day.photos[s.slot].uploaded); }
 function markUploaded(list) { list.forEach(s => { if (day.photos[s.slot]) day.photos[s.slot].uploaded = true; }); }
-function evidenceSlots() {
-  const odo = day.photos.odoCarga ? "odoCarga" : day.photos.fin ? "fin" : "ini";
-  return [{ slot: "ticket", box: "ticketBomba" }, { slot: "ticketCar", box: "ticketCar" }, { slot: odo, box: "odometro" }];
-}
+// recuadros de la pestaña de Evidencia: voucher → TICKET CAR, ticket → TICKET BOMBA, odómetro → ODÓMETRO, adicional → RESPALDO
+const CARGA_SLOTS = [{ slot: "ticket", box: "ticketBomba" }, { slot: "ticketCar", box: "ticketCar" }, { slot: "odoCarga", box: "odometro" }, { slot: "extra", box: "respaldo" }];
 
 async function saveRow(extraSlots) {
   const slots = slotsToSend(extraSlots);
@@ -311,7 +406,7 @@ function gapInfo() {
 }
 let lowArmed = false;
 function renderGap() {
-  const box = $("gapBox"); const g = gapInfo(); box.textContent = "";
+  const box = $("gapBox"); if (!box) return; const g = gapInfo(); box.textContent = "";
   if (!g || g.diff === 0 || day.stage !== "idle") { box.hidden = true; return; }
   box.hidden = false;
   if (g.diff > 0) {
@@ -347,26 +442,50 @@ async function beginDay(t, label) {
   loadSheet();
 }
 
-$("btnStart").onclick = async () => {
-  syncEntry();
-  if (!need([["kmIni", isNum, "km inicial"], ["fTras", has, "fecha"]], "startErr", "Falta: ")) return;
+// Iniciar jornada: hoja con la foto del odómetro, el km leído y el punto de salida
+$("btnStart").onclick = () => {
   if (!cfg.scriptUrl) { banner("bad", "Primero conecta tu hoja", "Pega la dirección del servicio de Google."); return; }
-  const g = gapInfo();
-  if (g && g.diff < 0 && !lowArmed) { lowArmed = true; $("startErr").textContent = "El km es menor que el último registrado. Toca otra vez si es correcto."; $("startErr").hidden = false; return; }
-  lowArmed = false;
+  day.entry.fTras = today();
+  if (!has(day.entry.kmIni) && lastKnownKm() !== null) day.entry.kmIni = String(lastKnownKm());
   if (!has(day.entry.de) && home()) { day.entry.de = homeLabel(); day.entry.deC = homeCoords(); }
-  const b = $("btnStart"); b.disabled = true; b.textContent = "Arrancando…";
-  try {
-    markDeparture();
-    const t = await nat("startTracking");
-    if (!t.ok) throw new Error(t.error || "No se pudo iniciar el GPS");
-    day.stage = "running"; day.startedAt = Date.now(); day.tramoStart = Date.now(); persist();
-    render();
-    await beginDay();
-  } catch (e) {
-    if (day.stage === "running") banner("bad", "El inicio no se guardó en la hoja", e.message + ". El recorrido sí se está grabando.", [{ label: "Reintentar", cls: "primary", run: () => beginDay().catch(x => banner("bad", "Sigue sin guardarse", x.message)) }], "startfail");
-    else banner("bad", "No se pudo arrancar", e.message);
-  } finally { b.disabled = false; b.textContent = "Iniciar jornada y grabar"; render(); }
+  fillForm(); persist();
+  openModal(sh => {
+    sh.append(el("h2", "", "Iniciar jornada"), el("p", "hint", fechaLarga(today()) + ". Toma la foto del odómetro: la app lee el km. Si la lectura no es correcta, toca los números en la foto o escribe el km."));
+    const d = el("div"); d.id = "shot-ini"; sh.appendChild(d);
+    const lk = el("label", "", "Km inicial del odómetro"); const ik = el("input", "num bigkm"); ik.id = "m_kmIni"; ik.type = "number"; ik.inputMode = "numeric"; ik.value = day.entry.kmIni || "";
+    const onKm = () => { ik.classList.remove("bad"); day.entry.kmIni = ik.value.trim(); $("kmIni").value = day.entry.kmIni; persist(); renderGap(); renderCluster(); };
+    ik.oninput = onKm; ik.onchange = onKm; lk.appendChild(ik);
+    const gap = el("div", "note fuel"); gap.id = "gapBox"; gap.hidden = true;
+    const ld = el("label", "", "Sale de"); const id_ = el("input"); id_.id = "m_de"; id_.value = day.entry.de || ""; ld.appendChild(id_);
+    const lc = el("label", "", "Coordenadas de salida"); const ic = el("input", "num"); ic.id = "m_deC"; ic.value = day.entry.deC || ""; lc.appendChild(ic);
+    id_.oninput = id_.onchange = () => { day.entry.de = id_.value.trim(); $("de").value = day.entry.de; persist(); };
+    ic.oninput = ic.onchange = () => { day.entry.deC = ic.value.trim(); $("deC").value = day.entry.deC; persist(); };
+    const err = el("div", "err"); err.hidden = true;
+    const go = el("button", "go big", "Arrancar y grabar recorrido"); const no = el("button", "ghost", "Cancelar"); no.onclick = closeModal;
+    let low = false;
+    go.onclick = async () => {
+      const km = num(ik.value);
+      if (km === null) { ik.classList.add("bad"); err.textContent = "Falta el km inicial: toma la foto o escríbelo."; err.hidden = false; return; }
+      const g = gapInfo();
+      if (g && g.diff < 0 && !low) { low = true; err.textContent = "El km es menor que el último registrado (" + fmt(g.last) + "). Revisa la lectura; toca otra vez si es correcto."; err.hidden = false; return; }
+      go.disabled = true; go.textContent = "Arrancando…";
+      try {
+        markDeparture();
+        const t = await nat("startTracking");
+        if (!t.ok) throw new Error(t.error || "No se pudo iniciar el GPS");
+        day.stage = "running"; day.startedAt = Date.now(); day.tramoStart = Date.now(); persist();
+        closeModal(); render();
+        await beginDay();
+      } catch (e) {
+        if (day.stage === "running") banner("bad", "El inicio no se guardó en la hoja", e.message + ". El recorrido sí se está grabando.", [{ label: "Reintentar", cls: "primary", run: () => beginDay().catch(x => banner("bad", "Sigue sin guardarse", x.message)) }], "startfail");
+        else { err.textContent = e.message; err.hidden = false; go.disabled = false; go.textContent = "Arrancar y grabar recorrido"; }
+      } finally { render(); }
+    };
+    const act = el("div", "actions"); act.append(no);
+    sh.append(lk, gap, ld, lc, err, go, act);
+  });
+  drawShot("ini"); renderGap();
+  if (!day.photos.ini) takePhoto("ini", "camera");
 };
 
 $("btnArm").onclick = async () => {
@@ -410,7 +529,7 @@ function openIniConfirm(required) {
   openModal(sh => {
     sh.appendChild(el("h2", "", "Km inicial del día"));
     sh.appendChild(el("p", "hint", required ? "No hay un km anterior registrado. Toma la foto del odómetro para empezar el registro." : "Toma la foto del odómetro: si el km es distinto al último registro se corrige y, si hace falta, se agrega el registro de ajuste."));
-    const d = el("div"); d.id = "shot-ini-m"; sh.appendChild(d);
+    const d = el("div"); d.id = "shot-ini"; sh.appendChild(d);
     const lab = el("label", "", "Km del odómetro"); const inp = el("input", "num"); inp.id = "m_kmIni"; inp.type = "number"; inp.value = day.entry.kmIni || ""; lab.appendChild(inp); sh.appendChild(lab);
     const err = el("div", "err"); err.hidden = true; sh.appendChild(err);
     const act = el("div", "actions");
@@ -440,11 +559,7 @@ function openIniConfirm(required) {
     later.onclick = closeModal;
     act.append(ok, later); sh.appendChild(act);
   });
-  // reutiliza la tarjeta de la foto de inicio dentro de la hoja
-  const box = $("shot-ini-m"); box.id = "shot-ini"; const main = document.querySelector("#stepStart #shot-ini"); if (main) main.id = "shot-ini-hidden";
   drawShot("ini");
-  const restore = () => { if (main) main.id = "shot-ini"; box.id = "shot-ini-m"; };
-  closeHooks.push(restore);
 }
 
 // Descanso
@@ -468,19 +583,76 @@ $("btnRest").onclick = () => {
   });
 };
 
-// Carga
-$("btnCarga").onclick = async () => {
-  syncEntry();
-  if (!need([["fCarga", has, "fecha de carga"], ["importe", v => num(v) > 0, "importe"], ["litros", v => num(v) > 0, "litros"]], "cargaErr", "Falta: ")) return;
-  const b = $("btnCarga"); b.disabled = true; b.textContent = "Subiendo fotos y guardando…";
-  try {
-    const r = await saveRow(evidenceSlots());
-    day.cargaSaved = true; persist();
-    banner("ok", "Carga guardada", "Fila " + r.row + (r.evidenceTab ? " · fotos y datos en la pestaña " + r.evidenceTab : "") + ".", null, "ok");
-    $("cargaBox").open = false; loadSheet();
-  } catch (e) { banner("bad", "La carga no se guardó", e.message); }
-  finally { b.disabled = false; b.textContent = "Guardar carga en la bitácora"; }
-};
+// ---------- carga de combustible ----------
+// Fotos: ticket de bomba, voucher de cobro, odómetro y una adicional. Del ticket se leen folio, fecha y hora,
+// importe y litros. Se guarda en la fila del traslado que corresponde y en la pestaña de Evidencia que le toca.
+const CKEY = "bitacora-carga";
+const CF = ["c_folio", "c_fecha", "c_hora", "c_importe", "c_litros", "c_factura", "c_km"];
+function saveCargaForm() { const o = {}; CF.forEach(k => { if ($(k)) o[k] = $(k).value; }); if ($("c_row")) o.c_row = $("c_row").value; save(CKEY, o); updatePump(); }
+function cargaRowOptions(date) {
+  const opts = [];
+  const isToday = date === day.date && day.stage === "running";
+  if (isToday) opts.push({ v: "cur", t: "Tramo en curso" + (day.row ? " (fila " + day.row + ")" : "") + " · desde " + (day.entry.de || "inicio") });
+  (sheet.rows || []).filter(x => x.fTras === date && !/DESCANSO/i.test(x.asunto) && (!isToday || x.r !== day.row)).slice().reverse()
+    .forEach(x => opts.push({ v: String(x.r), t: "Fila " + x.r + " · " + (x.de || "—") + " → " + (x.a || "abierto") + (x.importe ? " · ya tiene carga" : "") }));
+  opts.push({ v: "new", t: "Fila nueva solo para la carga" });
+  return opts;
+}
+function openCarga() {
+  const saved = load(CKEY, {});
+  openModal(sh => {
+    sh.append(el("h2", "", "Carga de combustible"), el("p", "hint", "Toma o sube la foto del ticket de bomba: la app lee folio, fecha y hora, importe y litros. Las fotos van a la pestaña de Evidencia que le toca a esta carga."));
+    const pump = el("div", "pump");
+    [["Importe $", "c_pImp", ""], ["Litros", "c_pLit", ""], ["Precio / L", "c_pPre", " s"]].forEach(([k, id, c]) => { const r = el("div", "r"); const v = el("span", "v" + c, "0"); v.id = id; r.append(el("span", "k", k), v); pump.appendChild(r); });
+    sh.appendChild(pump);
+    ["ticket", "ticketCar", "odoCarga", "extra"].forEach(k => { const d = el("div"); d.id = "shot-" + k; sh.appendChild(d); });
+    const mk = (id, label, type, cls, ph) => { const l = el("label", "", label); const i = el("input", cls || ""); i.id = id; i.type = type || "text"; if (ph) i.placeholder = ph; if (type === "number") i.step = "any"; i.value = saved[id] ?? ""; i.oninput = i.onchange = () => { i.classList.remove("bad"); saveCargaForm(); if (id === "c_fecha") fillRows(); }; l.appendChild(i); return l; };
+    const g1 = el("div", "grid"); g1.append(mk("c_folio", "Folio / # ticket"), mk("c_fecha", "Fecha", "date"), mk("c_hora", "Hora", "time"));
+    const g2 = el("div", "grid"); g2.append(mk("c_importe", "Importe ($)", "number", "num"), mk("c_litros", "Litros", "number", "num"));
+    const g3 = el("div", "grid"); g3.append(mk("c_km", "Odómetro (km)", "number", "num"), mk("c_factura", "No. factura (opcional)"));
+    const lr = el("label", "", "Guardar en el registro"); const sel = el("select"); sel.id = "c_row"; sel.onchange = saveCargaForm; lr.appendChild(sel);
+    const err = el("div", "err"); err.hidden = true;
+    const ok = el("button", "primary big", "Guardar carga y evidencias"); const no = el("button", "ghost", "Cerrar"); no.onclick = closeModal;
+    const clear = el("button", "ghost", "Limpiar"); clear.onclick = () => { save(CKEY, {}); ["ticket", "ticketCar", "odoCarga", "extra"].forEach(k => { delete day.photos[k]; A.clearPhoto(k); }); persist(); openCarga(); };
+    sh.append(g1, g2, g3, lr, err, ok);
+    const act = el("div", "actions"); act.append(clear, no); sh.appendChild(act);
+    function fillRows() {
+      const d = $("c_fecha").value || today(); const prev = sel.value || saved.c_row;
+      sel.textContent = ""; const opts = cargaRowOptions(d);
+      opts.forEach(o => { const op = el("option", "", o.t); op.value = o.v; sel.appendChild(op); });
+      if (opts.some(o => o.v === prev)) sel.value = prev;
+    }
+    if (!$("c_fecha").value) $("c_fecha").value = today();
+    fillRows();
+    ok.onclick = async () => {
+      const v = id => $(id).value.trim();
+      const miss = [];
+      if (!v("c_fecha")) miss.push(["c_fecha", "fecha"]);
+      if (!(num(v("c_importe")) > 0)) miss.push(["c_importe", "importe"]);
+      if (!(num(v("c_litros")) > 0)) miss.push(["c_litros", "litros"]);
+      miss.forEach(([id]) => $(id).classList.add("bad"));
+      if (miss.length) { err.textContent = "Falta: " + miss.map(m => m[1]).join(", ") + "."; err.hidden = false; return; }
+      if (!day.photos.ticket || !day.photos.ticket.preview) { if (!ok.dataset.armed) { ok.dataset.armed = "1"; ok.textContent = "Guardar sin foto del ticket"; err.textContent = "Falta la foto del ticket de bomba para la evidencia."; err.hidden = false; return; } }
+      ok.disabled = true; ok.textContent = "Subiendo fotos y guardando…"; err.hidden = true;
+      try {
+        let row = null; const choice = sel.value;
+        if (choice === "cur") { if (!day.row) await saveRow([]); row = day.row; }
+        else if (choice !== "new") row = Number(choice);
+        const carga = { folio: v("c_folio"), fCarga: v("c_fecha"), hora: v("c_hora"), importe: v("c_importe"), litros: v("c_litros"), factura: v("c_factura"), km: v("c_km") };
+        const slots = slotsToSend(CARGA_SLOTS);
+        const r = await call("carga", { row, date: v("c_fecha"), carga, photoSlots: slots });
+        if (!r.ok) throw new Error(r.error || "Error al guardar la carga");
+        markUploaded(slots);
+        CARGA_SLOTS.forEach(x => { delete day.photos[x.slot]; A.clearPhoto(x.slot); });
+        save(CKEY, {}); persist(); closeModal(); loadSheet();
+        banner("ok", "Carga guardada en la fila " + r.row, money(num(carga.importe)) + " · " + fmt(num(carga.litros), 3) + " L · folio " + (carga.folio || "—") + (r.evidenceTab ? ". Fotos y datos en la pestaña " + r.evidenceTab + "." : "."), null, "ok");
+      } catch (e) { err.textContent = e.message; err.hidden = false; ok.disabled = false; ok.textContent = "Reintentar"; }
+    };
+  });
+  ["ticket", "ticketCar", "odoCarga", "extra"].forEach(drawShot);
+  updatePump();
+}
+["btnCarga", "btnCargaIdle", "btnCargaDone", "btnCargaReg"].forEach(id => $(id).onclick = () => { if (!cfg.scriptUrl) { banner("bad", "Primero conecta tu hoja", ""); return; } openCarga(); });
 
 // Fin
 $("btnArriveHome").onclick = () => { autoFill("a", homeLabel()); autoFill("aC", homeCoords()); };
@@ -493,8 +665,7 @@ $("btnEnd").onclick = async () => {
   const homeClosed = lastDone && !day.row && isHomeText(lastDone.a) && tk < 0.5;
   if (!homeClosed && !need([["kmFin", v => isNum(v) && (ini === null || num(v) >= ini), "km final (no menor al inicial)"]], "endErr", "Revisa: ")) return;
   if (homeClosed && !isNum(day.entry.kmFin)) { day.entry.kmFin = String(num(lastDone.entry.kmFin)); }
-  const fuel = num(day.entry.importe) > 0 && !day.cargaSaved;
-  if (fuel && !need([["fCarga", has, "fecha de carga"], ["litros", v => num(v) > 0, "litros"]], "endErr", "La carga está incompleta: ")) { $("cargaBox").open = true; return; }
+  const asuntoFin = $("aAsunto").value.trim() || (isHomeText(day.entry.a) || (homeClosed && isHomeText(lastDone.a)) ? "Regreso a domicilio" : "");
   const b = $("btnEnd"); b.disabled = true; b.textContent = "Cerrando el día…";
   try {
     A.stopTracking();
@@ -502,14 +673,15 @@ $("btnEnd").onclick = async () => {
     let row;
     if (homeClosed) {
       const entry = Object.assign({}, lastDone.entry, { kmFin: String(fin) });
-      if (fuel) Object.assign(entry, { fCarga: day.entry.fCarga, importe: day.entry.importe, litros: day.entry.litros, ticket: day.entry.ticket, factura: day.entry.factura });
-      const slots = slotsToSend([{ slot: "fin" }].concat(fuel ? evidenceSlots() : []));
+      if (asuntoFin && !has(entry.asunto)) entry.asunto = asuntoFin;
+      const slots = slotsToSend([{ slot: "fin" }]);
       const r = await call("save", { row: lastDone.row, entry, photoSlots: slots });
       if (!r.ok) throw new Error(r.error);
       markUploaded(slots); lastDone.entry = entry; lastDone.km = fin - (num(entry.kmIni) || fin); row = r.row;
     } else {
       if (!has(day.entry.a) && home() && nearHomeNow()) { day.entry.a = homeLabel(); day.entry.aC = homeCoords(); }
-      const slots = [{ slot: "fin" }].concat(fuel ? evidenceSlots() : []);
+      day.entry.asunto = asuntoFin || (isHomeText(day.entry.a) ? "Regreso a domicilio" : day.entry.asunto || "");
+      const slots = [{ slot: "fin" }];
       const r = await saveRow(slots); row = r.row;
       const g = tramoKm(); rowGps[day.entry.fTras + "|" + r.row] = g; save(RGKEY, rowGps);
       day.done.push({ row: r.row, de: day.entry.de, a: day.entry.a, km: fin - (ini || 0), gps: g, entry: Object.assign({}, day.entry) });
@@ -634,7 +806,10 @@ function renderTrack() {
       info.appendChild(el("span", "km", "km " + fmt(st.km)));
       info.appendChild(el("span", "tag" + (st.confirmed ? " ok" : ""), st.confirmed ? "foto ✓" : "estimado GPS"));
       a.appendChild(info);
-      if (!st.confirmed) { const f = el("button", "small ghost", "Confirmar km con foto"); f.style.marginTop = "6px"; f.onclick = () => openConfirm(s, i, st.row, st.km); a.appendChild(f); }
+      const dn = day.done.find(d => d.row === st.row);
+      const asu = dn && dn.entry ? dn.entry.asunto : "";
+      a.appendChild(el("div", "hint", asu ? "Asunto: " + asu : "Sin asunto"));
+      if (!st.confirmed || !asu) { const f = el("button", "small " + (asu ? "ghost" : "primary"), asu ? "Confirmar km con foto" : "Agregar asunto"); f.style.marginTop = "6px"; f.onclick = () => openConfirm(s, i, st.row, st.km); a.appendChild(f); }
     }
     else if (st && st.ignored) a.appendChild(el("div", "hint", "No fue parada (sin registro)"));
     else if (registering) a.appendChild(el("div", "hint", "Guardando registro…"));
@@ -663,8 +838,7 @@ function pendingStops() { try { return JSON.parse(A.track(day.date)).stops.map((
 function updateStopModal() {}
 async function closeTramo(s, km, a, aC, asunto, slots, gpsTo) {
   day.entry = Object.assign({}, day.entry, { kmFin: String(km), a, aC, asunto });
-  const fuel = num(day.entry.importe) > 0 && !day.cargaSaved;
-  const sl = slots.map(x => ({ slot: x })).concat(fuel ? evidenceSlots() : []);
+  const sl = slots.map(x => ({ slot: x }));
   const r = await saveRow(sl);
   const g = A.trackKm(day.date, day.tramoStart || 0, gpsTo || s.end || Date.now());
   const prev = { start: day.tramoStart, cargaSaved: day.cargaSaved };
@@ -672,8 +846,9 @@ async function closeTramo(s, km, a, aC, asunto, slots, gpsTo) {
   day.done.push({ row: r.row, de: day.entry.de, a, km: km - (num(day.entry.kmIni) || km), gps: g, entry: Object.assign({}, day.entry), prev, stop: s.start });
   day.stopsDone[s.start] = { row: r.row, km, confirmed: slots.length > 0 };
   // el siguiente tramo sale de esta parada con el km de este registro
-  slots.concat(["ini", "ticket", "ticketCar", "odoCarga"]).forEach(k => { delete day.photos[k]; A.clearPhoto(k); });
-  day.entry = { fTras: day.date, kmIni: String(km), de: a, deC: aC, asunto };
+  slots.concat(["ini"]).forEach(k => { delete day.photos[k]; A.clearPhoto(k); });
+  // el asunto se captura en cada parada; el tramo siguiente empieza sin asunto
+  day.entry = { fTras: day.date, kmIni: String(km), de: a, deC: aC, asunto: "" };
   day.row = null; day.tramoStart = gpsTo || s.end || Date.now(); day.cargaSaved = false;
   A.setConfig(JSON.stringify({ lastKm: km }));
   persist(); render();
@@ -696,7 +871,7 @@ async function autoRegisterPending() {
       const atHome = isHomeText(s.address) || nearHome(s.lat, s.lon);
       const a = atHome ? homeLabel() : (s.address || coordStr(s.lat, s.lon));
       const aC = atHome ? homeCoords() : coordStr(s.lat, s.lon);
-      const row = await closeTramo(s, km, a, aC, day.entry.asunto || "", [], s.start);
+      const row = await closeTramo(s, km, a, aC, atHome ? "Regreso a domicilio" : "", [], s.start);
       last = { s, i: o.i, row, km, atHome };
     }
   } catch (e) {
@@ -716,22 +891,29 @@ $("btnAddStop").onclick = async () => {
   try { await autoRegisterPending(); } finally { b.disabled = false; b.textContent = "+ Parada aquí"; }
 };
 
-// Fotos opcionales para confirmar el km real de una parada ya registrada
+// Asunto de cada parada (con los usados recientemente a un toque) y fotos para confirmar el km real
+const AKEY = "bitacora-asuntos";
+function rememberAsunto(t) { t = String(t || "").trim(); if (!t || /^Regreso a domicilio$/i.test(t)) return; const l = load(AKEY, []).filter(x => x.toLowerCase() !== t.toLowerCase()); l.unshift(t); save(AKEY, l.slice(0, 6)); }
 function openConfirm(s, i, row, kmEst) {
   const kp = "p" + s.start, kl = "l" + s.start;
   const done = day.done.find(d => d.row === row);
   openModal(sh => {
     sh.appendChild(el("h2", "", "Parada " + (i + 1) + " · fila " + row));
-    sh.appendChild(el("p", "hint", "Se registró con el km estimado por GPS (" + fmt(kmEst) + "). Toma la foto del odómetro: la app lee el km y corrige la fila; el siguiente tramo arranca con ese km."));
+    sh.appendChild(el("p", "hint", (s.address || coordStr(s.lat, s.lon)) + " · desde las " + hm(s.start) + ". ¿A qué viniste? El asunto queda en esta fila de la bitácora."));
+    const ls = el("label", "", "Asunto de la parada"); const is = el("input"); is.placeholder = "Supervisión de OS, soporte en campo, junta…"; is.value = done ? done.entry.asunto || "" : ""; ls.appendChild(is);
+    const recent = load(AKEY, []);
+    const chips = el("div", "chips");
+    recent.forEach(t => { const b = el("button", "chip", t); b.style.fontFamily = "var(--body)"; b.onclick = () => { is.value = t; is.classList.add("auto"); chips.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === b)); }; chips.appendChild(b); });
+    sh.append(ls); if (recent.length) sh.appendChild(chips);
+    sh.appendChild(el("p", "hint", "Km estimado por GPS: " + fmt(kmEst) + ". Toma la foto del odómetro para corregirlo con el km real; el siguiente tramo arranca con ese km."));
     const d1 = el("div"); d1.id = "shot-" + kp; const d2 = el("div"); d2.id = "shot-" + kl; sh.append(d1, d2);
     const lab = el("label", "", "Km real en esta parada"); const inp = el("input", "num"); inp.id = "m_km"; inp.type = "number"; inp.value = kmEst; inp.oninput = () => inp.classList.remove("auto", "bad"); lab.appendChild(inp);
     const la = el("label", "", "Llega a"); const ia = el("input"); ia.id = "m_a"; ia.value = done ? done.entry.a : ""; la.appendChild(ia);
     const lc = el("label", "", "Coordenadas"); const ic = el("input", "num"); ic.id = "m_aC"; ic.value = done ? done.entry.aC : ""; lc.appendChild(ic);
-    const ls = el("label", "", "Asunto de este tramo"); const is = el("input"); is.value = done ? done.entry.asunto || "" : ""; ls.appendChild(is);
-    sh.append(lab, la, lc, ls);
+    sh.append(lab, la, lc);
     const err = el("div", "err"); err.hidden = true; sh.appendChild(err);
     const act = el("div", "actions");
-    const ok = el("button", "primary", "Actualizar fila " + row), later = el("button", "ghost", "Listo, sin fotos");
+    const ok = el("button", "primary", "Guardar parada en la fila " + row), later = el("button", "ghost", "Después");
     ok.onclick = async () => {
       const km = num(inp.value);
       if (km === null || !done) { inp.classList.add("bad"); return; }
@@ -739,12 +921,13 @@ function openConfirm(s, i, row, kmEst) {
       ok.disabled = true; ok.textContent = "Subiendo fotos…";
       try {
         const entry = Object.assign({}, done.entry, { kmFin: String(km), a: ia.value.trim(), aC: ic.value.trim(), asunto: is.value.trim() });
+        rememberAsunto(entry.asunto);
         const slots = [kp, kl].filter(k => day.photos[k] && day.photos[k].preview && !day.photos[k].uploaded).map(k => ({ slot: k }));
         const res = await call("save", { row, entry, photoSlots: slots });
         if (!res.ok) throw new Error(res.error);
         slots.forEach(x => { delete day.photos[x.slot]; A.clearPhoto(x.slot); });
         done.entry = entry; done.km = km - (num(entry.kmIni) || km); done.a = entry.a;
-        day.stopsDone[s.start].km = km; day.stopsDone[s.start].confirmed = true;
+        day.stopsDone[s.start].km = km; day.stopsDone[s.start].confirmed = day.stopsDone[s.start].confirmed || slots.some(x => x.slot === kp);
         // el registro siguiente toma este km como inicial
         const idx = day.done.indexOf(done);
         const next = day.done[idx + 1];
@@ -871,10 +1054,10 @@ function editRow(x) {
     const ok = el("button", "primary", "Guardar cambios"), del = el("button", "danger", "Borrar fila"), cancel = el("button", "ghost", "Cancelar");
     cancel.onclick = closeModal;
     ok.onclick = async () => {
-      const entry = {}; FIELDS.forEach(k => entry[k] = f[k].value.trim());
+      const entry = {}; ROWF.forEach(k => entry[k] = f[k].value.trim());
       if (num(entry.kmFin) !== null && num(entry.kmIni) !== null && num(entry.kmFin) < num(entry.kmIni)) { err.textContent = "El km final no puede ser menor que el inicial."; err.hidden = false; return; }
       ok.disabled = true; ok.textContent = "Guardando…";
-      const r = await call("save", { row: x.r, entry, photoSlots: [] });
+      const r = await call("save", { row: x.r, entry, photoSlots: [], keepCarga: true });
       if (!r.ok) { err.textContent = r.error; err.hidden = false; ok.disabled = false; ok.textContent = "Guardar cambios"; return; }
       closeModal(); banner("ok", "Fila " + x.r + " actualizada", "", null, "ok"); loadSheet();
     };
@@ -890,9 +1073,8 @@ function editRow(x) {
   });
 }
 
-let closeHooks = [];
-function openModal(build) { closeHooks.splice(0).forEach(f => f()); const s = $("sheet"); s.textContent = ""; build(s); $("modal").hidden = false; }
-function closeModal() { $("modal").hidden = true; closeHooks.splice(0).forEach(f => f()); }
+function openModal(build) { const s = $("sheet"); s.textContent = ""; build(s); $("modal").hidden = false; s.scrollTop = 0; }
+function closeModal() { $("modal").hidden = true; $("sheet").textContent = ""; }
 $("modal").addEventListener("click", e => { if (e.target === $("modal")) closeModal(); });
 
 // ---------- ajustes ----------
@@ -1028,7 +1210,8 @@ function render() {
     $("doneText").textContent = "Registrado en la fila " + day.row + ". No sonarán alertas hoy.";
     $("btnEarth2").hidden = true; $("btnShareKml2").hidden = true; $("btnNewDay").hidden = false;
   }
-  ["ini", "fin", "ticket", "ticketCar", "odoCarga"].forEach(drawShot);
+  ["ini", "fin", "ticket", "ticketCar", "odoCarga", "extra"].forEach(drawShot);
+  if (day.stage === "running" && !$("aAsunto").value && isHomeText(day.entry.a)) $("aAsunto").value = "Regreso a domicilio";
   fillForm(); renderGap(); renderHome(); renderTrack();
 }
 
