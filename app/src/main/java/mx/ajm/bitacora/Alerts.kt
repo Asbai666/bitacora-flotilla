@@ -108,7 +108,7 @@ class AlarmReceiver : BroadcastReceiver() {
         when (intent.action) {
             Alerts.A_START -> {
                 // armar la grabación: empieza sola al salir del domicilio
-                if (workDay && !p.dayStarted && p.autoStart && p.hasHome && !p.armed && !(p.tracking && p.trackDate == Prefs.today()))
+                if (workDay && !p.dayStarted && p.autoStart && p.hasHome && !p.armed && !p.tracking)
                     TrackingService.arm(ctx)
                 val recording = p.tracking && p.trackDate == Prefs.today()
                 if (workDay && !p.dayStarted && (p.armed || recording)) { p.reminderCount = 0; Alerts.schedule(ctx); return }
@@ -136,7 +136,7 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         Alerts.schedule(ctx)
         val p = Prefs(ctx)
-        if (p.tracking && p.trackDate == Prefs.today()) TrackingService.start(ctx)
+        if (p.tracking) TrackingService.resume(ctx)
         else if (p.armed) TrackingService.arm(ctx)
     }
 }

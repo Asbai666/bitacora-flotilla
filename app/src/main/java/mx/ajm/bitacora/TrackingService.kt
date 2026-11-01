@@ -233,7 +233,8 @@ class TrackingService : Service() {
         /** Espera a que el vehículo salga del domicilio para empezar a grabar. */
         fun arm(ctx: Context): Boolean {
             val p = Prefs(ctx)
-            if (!p.hasHome || (p.tracking && p.trackDate == Prefs.today())) return false
+            // nunca se arma si hay una grabación en curso (aunque sea del día anterior): la cortaría
+            if (!p.hasHome || p.tracking) return false
             p.armed = true
             return try {
                 ContextCompat.startForegroundService(ctx, Intent(ctx, TrackingService::class.java).setAction(ACTION_ARM)); true
@@ -270,6 +271,22 @@ class TrackingService : Service() {
                     "Android detuvo la grabación del GPS. Abre la app para continuar.", "resume")
                 false
             }
+        }
+
+        /** Reanuda la grabación ya abierta (tras reinicio o actualización) sin cambiar de día. */
+        fun resume(ctx: Context) {
+            val p = Prefs(ctx)
+            if (!p.tracking || !recent(p.trackDate)) return
+            try { ContextCompat.startForegroundService(ctx, Intent(ctx, TrackingService::class.java)) } catch (e: Exception) {
+                Alerts.alert(ctx, Alerts.ID_MOVE, "Toca para reanudar el recorrido", "Android detuvo la grabación del GPS. Abre la app para continuar.", "resume")
+            }
+        }
+
+        /** El día grabado es de hoy o de ayer (una jornada que pasó la medianoche). */
+        fun recent(date: String): Boolean {
+            if (date.isEmpty()) return false
+            val y = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, -1) }
+            return date >= Prefs.today(y.timeInMillis)
         }
 
         fun stop(ctx: Context) {

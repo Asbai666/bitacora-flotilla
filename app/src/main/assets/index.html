@@ -218,6 +218,7 @@ details .card{border:0;padding:0;background:transparent}
 .pinnum.done{background:var(--fuel)} .pinnum.pend{background:#0b0f12;color:var(--fuel);border-color:var(--fuel)}
 .pinhome{background:#0b0f12;border:2px solid var(--led);border-radius:6px;color:var(--led);font:700 11px/16px var(--body);text-align:center}
 .pulse{animation:pulse 1.4s infinite}
+.darktiles{filter:invert(1) hue-rotate(180deg) brightness(.82) contrast(.92) saturate(.6)}
 .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 .tile{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:7px 8px;min-width:0}
 .tile .k{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -376,7 +377,7 @@ html,body{overflow-x:hidden}
       <label>Usuario (No. de empleado _ Nombre completo)<input id="vUser"></label>
       <label>TAG / No. de tarjeta<input id="vTag"></label>
       <div class="actions"><button class="primary" id="btnSaveSettings">Guardar ajustes</button></div>
-      <p class="hint" style="text-align:center">Bitácora Flotilla 2.4</p>
+      <p class="hint" style="text-align:center">Bitácora Flotilla 2.5</p>
     </div>
   </section>
 </div>

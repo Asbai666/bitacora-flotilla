@@ -16,7 +16,10 @@ import android.provider.MediaStore
 import android.provider.Settings
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -80,10 +83,14 @@ class MainActivity : AppCompatActivity() {
         else if (Build.VERSION.SDK_INT >= 29) web.settings.forceDark = android.webkit.WebSettings.FORCE_DARK_OFF
         web.setBackgroundColor(0xFF0B0F12.toInt())
         web.webChromeClient = WebChromeClient()
+        web.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
+                if (request.url.host == "tile.openstreetmap.org") tile(request.url) else null
+        }
         web.addJavascriptInterface(Bridge(), "Android")
         web.loadUrl("file:///android_asset/index.html")
 
-        if (prefs.tracking && prefs.trackDate == Prefs.today()) TrackingService.start(this)
+        if (prefs.tracking) TrackingService.resume(this)
         else if (prefs.armed) TrackingService.arm(this)
         handleAlertIntent(intent)
     }
@@ -109,6 +116,26 @@ class MainActivity : AppCompatActivity() {
     private fun handleAlertIntent(i: Intent?) {
         val k = i?.getStringExtra("alert") ?: return
         web.postDelayed({ emit("openAlert", JSONObject().put("kind", k)) }, 600)
+    }
+
+    // ---------- mapa: calles de OpenStreetMap con caché en el teléfono ----------
+    // OSM pide identificar la app y guardar en caché los mosaicos; sin eso los bloquea.
+    private fun tile(u: Uri): WebResourceResponse {
+        val parts = u.pathSegments
+        val dir = java.io.File(cacheDir, "tiles").apply { mkdirs() }
+        val f = java.io.File(dir, parts.joinToString("_"))
+        val fresh = f.exists() && System.currentTimeMillis() - f.lastModified() < 14L * 86_400_000
+        if (!fresh) try {
+            val c = (java.net.URL(u.toString()).openConnection() as java.net.HttpURLConnection).apply {
+                connectTimeout = 10_000; readTimeout = 15_000
+                setRequestProperty("User-Agent", "BitacoraFlotilla/2.5 (Android; mx.ajm.bitacora)")
+                setRequestProperty("Referer", "https://github.com/Asbai666/bitacora-flotilla")
+            }
+            if (c.responseCode == 200) { val bytes = c.inputStream.use { it.readBytes() }; f.writeBytes(bytes) }
+            c.disconnect()
+        } catch (e: Exception) { }
+        return if (f.exists()) WebResourceResponse("image/png", null, f.inputStream())
+        else WebResourceResponse("image/png", null, 404, "Not Found", emptyMap(), java.io.ByteArrayInputStream(ByteArray(0)))
     }
 
     // ---------- respuesta a la interfaz ----------
@@ -389,7 +416,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface fun track(date: String): String =
-            store.summary(date.ifEmpty { Prefs.today() }).put("active", prefs.tracking && prefs.trackDate == Prefs.today()).toString()
+            date.ifEmpty { Prefs.today() }.let { d -> store.summary(d).put("active", prefs.tracking && prefs.trackDate == d).put("trackDate", prefs.trackDate).toString() }
 
         @JavascriptInterface fun call(cb: Int, action: String, json: String) {
             lifecycleScope.launch(Dispatchers.IO) {

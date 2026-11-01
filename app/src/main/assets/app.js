@@ -144,6 +144,7 @@ function rowsOf(lines) {
   return out;
 }
 function odoCands(lines, ref, regionBonus) {
+  const R = ref && typeof ref === "object" ? ref : { min: ref ?? null, exp: null };
   const map = {};
   const add = (val, score, v) => { const k = String(val); const c = map[k] || (map[k] = { v: val, score: 0, seen: new Set() }); c.score = Math.max(c.score, score); c.seen.add(v); };
   const consider = (text, h, v, joined) => {
@@ -159,7 +160,9 @@ function odoCands(lines, ref, regionBonus) {
       let sc = Math.min(120, h || 10) * 0.6 + (/KM/.test(up) ? 25 : 0) + (/ODO/.test(up) ? 30 : 0);
       sc += digits.length >= 5 ? 40 : digits.length === 4 ? 12 : -25;
       if (joined) sc -= 6;
-      if (ref) { if (val >= ref && val <= ref + 3000) sc += 80 - Math.min(40, (val - ref) / 50); else if (val < ref) sc -= 60; else sc -= 20; }
+      if (R.min !== null && val < R.min - 1) sc -= 60;
+      if (R.exp !== null) { const dd = Math.abs(val - R.exp); sc += dd <= 15 ? 90 : dd <= 100 ? 60 : dd <= 1000 ? 15 : -30; }
+      else if (R.min !== null && val >= R.min && val <= R.min + 3000) sc += 80 - Math.min(40, (val - R.min) / 50);
       add(val, sc + (regionBonus || 0), v);
     });
   };
@@ -236,9 +239,18 @@ function bindInput(i, fn) {
   i.addEventListener("input", () => { i.dataset.edited = "1"; i.classList.remove("auto", "bad"); if (fn) fn(); });
   i.addEventListener("autofill", () => { if (fn) fn(); });
 }
+// Lo que se espera leer: al salir, el último km registrado; en parada o llegada, km inicial del tramo + GPS grabado
 function odoRef(slot) {
-  if (slot === "ini") return lastKnownKm();
-  return num(day.entry.kmIni) ?? lastKnownKm();
+  if (slot === "ini") { const l = lastKnownKm(); return { min: null, exp: l }; }
+  if (slot === "odoCarga") return { min: null, exp: num(day.entry.kmIni) ?? lastKnownKm() };
+  const ini = num(day.entry.kmIni) ?? lastKnownKm(), g = tramoKm(pastDay() ? lastPointT() : 0);
+  return { min: ini, exp: ini !== null && g !== null ? ini + g : ini };
+}
+// Una lectura que no cuadra con el GPS pide confirmación antes de guardarse
+function mismatch(odo, gps) {
+  if (odo === null || gps === null || gps === undefined) return null;
+  if (Math.abs(odo - gps) > Math.max(15, gps * 0.6)) return "El odómetro da " + fmt(odo) + " km en este tramo y el GPS grabó " + fmt(gps, 1) + " km. Revisa la lectura (toca los números en la foto o elige otra). Toca otra vez para guardar así.";
+  return null;
 }
 function applyOdo(slot, km) {
   const p = day.photos[slot];
@@ -602,6 +614,8 @@ async function startFromDeparture(t) {
 }
 
 // ---------- 2. AGREGAR PARADA ----------
+const pastDay = () => day.stage === "running" && day.date !== today();
+const lastPointT = () => { const t = trackInfo(); return t.last ? t.last.t : 0; };
 const trackInfo = () => { try { return JSON.parse(A.track(day.date)); } catch (e) { return { km: 0, stops: [], active: false, points: 0, last: null }; } };
 const pendingStops = () => trackInfo().stops.map((s, i) => ({ s, i })).filter(o => !day.stopsDone[o.s.start]);
 const isHomeStop = s => isHomeText(s.address) || nearHome(s.lat, s.lon);
@@ -626,6 +640,7 @@ async function closeTramo(s, km, a, aC, asunto, slots, gpsTo) {
 
 async function openStop() {
   if (day.stage !== "running") return;
+  if (pastDay()) { openFinish(); return; }
   // si el vehículo ya está detenido en una parada registrada, se edita esa en lugar de duplicarla
   const t = trackInfo();
   const cur = t.stops.map((s, i) => ({ s, i })).filter(o => o.s.open).pop();
@@ -661,6 +676,8 @@ async function openStop() {
       const km = num(ik.value);
       if (km === null) { ik.classList.add("bad"); failMsg(err, "Falta el km: toma la foto del odómetro o usa el estimado por GPS."); return; }
       if (ini !== null && km < ini) { ik.classList.add("bad"); failMsg(err, "El km no puede ser menor al inicial del tramo (" + fmt(ini) + ")."); return; }
+      const mm = mismatch(ini !== null ? km - ini : null, tramoKm());
+      if (mm && ok.dataset.sure !== String(km)) { ok.dataset.sure = String(km); ik.classList.add("bad"); failMsg(err, mm); return; }
       ok.disabled = true; ok.textContent = "Guardando…"; err.hidden = true;
       try {
         const row = await saveManualStop(cur && !day.stopsDone[cur.s.start] ? cur.s : null, km, $("f_a").value.trim(), $("f_aC").value.trim(), asu.value.trim());
@@ -740,6 +757,8 @@ function openConfirm(s, i, row, kmEst) {
     ok.onclick = async () => {
       const km = num(ik.value);
       if (km === null || (ini !== null && km < ini)) { ik.classList.add("bad"); failMsg(err, km === null ? "Falta el km." : "El km no puede ser menor al inicial del tramo (" + fmt(ini) + ")."); return; }
+      const mm = mismatch(ini !== null ? km - ini : null, done.gps ?? null);
+      if (mm && ok.dataset.sure !== String(km)) { ok.dataset.sure = String(km); ik.classList.add("bad"); failMsg(err, mm); return; }
       ok.disabled = true; ok.textContent = "Guardando…";
       try {
         const entry = Object.assign({}, done.entry, { kmFin: String(km), a: $("f_a").value.trim(), aC: $("f_aC").value.trim(), asunto: asu.value.trim() });
@@ -791,16 +810,18 @@ async function openFinish(homeStop) {
   if (pendingStops().some(o => !isHomeStop(o.s))) await autoRegisterPending(true);
   if (!homeStop) { const h = pendingStops().find(o => isHomeStop(o.s)); if (h) homeStop = h.s; }
   const lastDone = day.done[day.done.length - 1];
+  const past = pastDay();
+  const endT = homeStop ? homeStop.start : past ? lastPointT() : 0;
   // versiones anteriores ya registraban la llegada a casa como parada: entonces se corrige esa fila
-  const legacyHome = !homeStop && lastDone && !day.row && isHomeText(lastDone.a) && (tramoKm() || 0) < 0.5;
+  const legacyHome = !homeStop && lastDone && !day.row && isHomeText(lastDone.a) && (tramoKm(endT) || 0) < 0.5;
   const ini = legacyHome ? num(lastDone.entry.kmIni) : num(day.entry.kmIni);
-  const gpsTramo = legacyHome ? (lastDone.gps ?? null) : tramoKm(homeStop ? homeStop.start : 0);
+  const gpsTramo = legacyHome ? (lastDone.gps ?? null) : tramoKm(endT);
   const est = ini !== null && gpsTramo !== null ? Math.round(ini + gpsTramo) : null;
   const kmStart = dayKmStart(), gpsTotal = gpsDay();
   const atHome = !!homeStop || legacyHome;
   openModal(sh => {
-    sh.append(el("h2", "", "Fin de día"),
-      el("p", "hint", homeStop ? "Llegaste al domicilio a las " + hm(homeStop.start) + ". Ya se llenó con el recorrido grabado; toma la foto del odómetro para confirmar el km real y cierra el día."
+    sh.append(el("h2", "", past ? "Cerrar el " + fechaLarga(day.date) : "Fin de día"),
+      el("p", "hint", past ? "Este día quedó abierto. Se llenó con lo grabado hasta las " + (endT ? hm(endT) : "—") + (homeStop ? " (llegada al domicilio)" : "") + ". Si no has movido el vehículo desde entonces, la foto del odómetro de ahora sirve; si ya lo usaste hoy, deja el km estimado." : homeStop ? "Llegaste al domicilio a las " + hm(homeStop.start) + ". Ya se llenó con el recorrido grabado; toma la foto del odómetro para confirmar el km real y cierra el día."
         : "Toma o sube la foto del odómetro al llegar. La app lee el km, lo compara con el recorrido grabado y llena el último registro."));
     const d = el("div"); d.id = "shot-fin"; sh.appendChild(d);
     const ik = kmField(sh, "Km final", day.photos.fin && day.photos.fin.km != null ? day.photos.fin.km : est, !(day.photos.fin && day.photos.fin.km != null) && est !== null);
@@ -823,18 +844,22 @@ async function openFinish(homeStop) {
       const km = num(ik.value);
       if (km === null) { ik.classList.add("bad"); failMsg(err, "Falta el km final: toma la foto o escríbelo."); return; }
       if (ini !== null && km < ini) { ik.classList.add("bad"); failMsg(err, "El km final no puede ser menor al inicial del tramo (" + fmt(ini) + ")."); return; }
+      const mm = mismatch(ini !== null ? km - ini : null, gpsTramo);
+      if (mm && ok.dataset.sure !== String(km)) { ok.dataset.sure = String(km); ik.classList.add("bad"); failMsg(err, mm); return; }
       ok.disabled = true; ok.textContent = "Cerrando el día…"; err.hidden = true;
       try {
-        await finishDay(km, $("f_a").value.trim(), $("f_aC").value.trim(), asu.value.trim(), homeStop, legacyHome);
+        await finishDay(km, $("f_a").value.trim(), $("f_aC").value.trim(), asu.value.trim(), homeStop, legacyHome, endT);
         closeModal();
       } catch (e) { failMsg(err, e.message + ". El recorrido sigue grabando; vuelve a intentar con señal."); ok.disabled = false; ok.textContent = "Reintentar"; }
     };
   }, "fin");
   drawShot("fin");
-  if (!atHome) hereInto("a");
+  if (past && !atHome) { const t = trackInfo(); if (t.last) { const h = nearHome(t.last.lat, t.last.lon); setField("f_a", h ? homeLabel() : coordStr(t.last.lat, t.last.lon), true); setField("f_aC", h ? homeCoords() : coordStr(t.last.lat, t.last.lon), true); if (h) setField("f_asunto", "Regreso a domicilio", true); } }
+  else if (!atHome) hereInto("a");
 }
 
-async function finishDay(km, a, aC, asunto, homeStop, legacyHome) {
+async function finishDay(km, a, aC, asunto, homeStop, legacyHome, endT) {
+  const past = pastDay(), closedDate = day.date;
   let row;
   if (legacyHome) {
     const ld = day.done[day.done.length - 1];
@@ -846,17 +871,19 @@ async function finishDay(km, a, aC, asunto, homeStop, legacyHome) {
     if (!a && home() && homeStop) { a = homeLabel(); aC = homeCoords(); }
     day.entry = Object.assign({}, day.entry, { kmFin: String(km), a, aC, asunto: asunto || (isHomeText(a) ? "Regreso a domicilio" : "") });
     const r = await saveRow([{ slot: "fin" }]); row = r.row;
-    const g = tramoKm(homeStop ? homeStop.start : 0); rowGps[day.entry.fTras + "|" + row] = g; save(RGKEY, rowGps);
+    const g = tramoKm(endT || 0); rowGps[day.entry.fTras + "|" + row] = g; save(RGKEY, rowGps);
     day.done.push({ row, de: day.entry.de, a: day.entry.a, km: km - (num(day.entry.kmIni) ?? km), gps: g, entry: Object.assign({}, day.entry), stop: homeStop ? homeStop.start : null });
     if (homeStop) day.stopsDone[homeStop.start] = { row, km, confirmed: !!(day.photos.fin && day.photos.fin.preview) };
   }
   rememberAsunto(asunto);
-  A.stopTracking();
+  // solo se detiene el GPS si está grabando este mismo día (el de hoy puede seguir grabando)
+  if (trackInfo().active) A.stopTracking();
   A.setConfig(JSON.stringify({ lastKm: km }));
   const odoTot = km - (dayKmStart() ?? km);
   const k = await nat("exportTrack", day.date, true, String(odoTot));
-  day.gpsKm = gpsDay(); day.kmEnd = km; day.endedAt = Date.now(); day.stage = "closed"; day.kml = k; persist();
+  day.gpsKm = gpsDay(); day.kmEnd = km; day.endedAt = endT || Date.now(); day.stage = "closed"; day.kml = k; persist();
   banner("ok", "Día cerrado", day.done.length + (day.done.length === 1 ? " registro" : " registros") + " (última fila " + row + ") · " + fmt(odoTot) + " km por odómetro" + (day.gpsKm !== null ? " · " + fmt(day.gpsKm, 1) + " km por GPS" : "") + "." + (k.links && k.links.kml ? " Recorrido KML en Drive." : ""), null, "ok");
+  if (past) { day = freshDay(); persist(); banner("ok", "Se cerró el " + fechaLarga(closedDate), "Ya puedes iniciar el día de hoy.", null, "past"); }
   render(); loadSheet();
 }
 
@@ -881,7 +908,7 @@ let map = null, routeLine = null, marks = null, lastSig = "", userMoved = false,
 function initMap() {
   if (map || !window.L) { if (!window.L) $("mapBadge").textContent = "Mapa no disponible"; return; }
   map = L.map("map", { zoomControl: false, attributionControl: true, preferCanvas: true, tap: true }).setView([19.83, -99.21], 13);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { subdomains: "abcd", maxZoom: 19, attribution: "© OpenStreetMap · © CARTO" }).addTo(map);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, className: "darktiles", attribution: "© OpenStreetMap" }).addTo(map);
   routeLine = L.polyline([], { color: "#ffb020", weight: 4, opacity: .95, lineJoin: "round" }).addTo(map);
   marks = L.layerGroup().addTo(map);
   map.on("movestart", () => { if (!fitting) userMoved = true; });
@@ -918,7 +945,7 @@ function renderMap(t) {
   if (sig !== lastSig && !userMoved) fitMap(pts, stops);
   lastSig = sig;
   const badge = $("mapBadge");
-  badge.textContent = day.stage === "running" ? "● Grabando · " + fmt(t.km || 0, 1) + " km" : day.stage === "closed" ? "Recorrido del día · " + fmt(t.km || 0, 1) + " km" : day.stage === "rest" ? "Día de descanso" : cfg.armed ? "Esperando la salida de casa" : "Sin recorrido hoy";
+  badge.textContent = pastDay() ? "Día anterior abierto · " + fmt(t.km || 0, 1) + " km" : day.stage === "running" ? "● Grabando · " + fmt(t.km || 0, 1) + " km" : day.stage === "closed" ? "Recorrido del día · " + fmt(t.km || 0, 1) + " km" : day.stage === "rest" ? "Día de descanso" : cfg.armed ? "Esperando la salida de casa" : "Sin recorrido hoy";
 }
 $("mapCenter").onclick = () => { userMoved = false; lastSig = ""; renderCluster(); };
 $("mapSize").onclick = () => { $("mapWrap").classList.toggle("tall"); setTimeout(() => { if (map) { map.invalidateSize(); userMoved = false; lastSig = ""; renderCluster(); } }, 280); };
@@ -945,7 +972,8 @@ function renderCluster() {
   $("tGas").textContent = lit !== null && precio && active ? money(lit * precio) : "—";
   $("tGasS").textContent = precio ? money(precio) + "/L" : "estimado";
   const st = $("gStatus"); st.className = "status"; st.textContent = "";
-  if (day.stage === "running") {
+  if (pastDay()) { st.className = "status warn"; st.append("El " + fechaLarga(day.date) + " sigue abierto" + (t.last ? " · último punto " + hm(t.last.t) : "") + " "); const b = el("button", "statusbtn", "Cerrarlo"); b.onclick = () => openFinish(); st.appendChild(b); }
+  else if (day.stage === "running") {
     if (!t.active) { st.className = "status warn"; st.append("La grabación del GPS está detenida "); const b = el("button", "statusbtn", "Reanudar"); b.onclick = startTracking; st.appendChild(b); }
     else if (t.last && Date.now() - t.last.t > 5 * 60000) { st.className = "status warn"; st.textContent = "Sin señal de GPS desde las " + hm(t.last.t); }
     else { st.append("Odómetro ≈ "); st.appendChild(el("b", "", ini !== null ? fmt(Math.round(ini + (tramoKm() || 0))) + " km" : "—")); if (t.last) st.append(" · último punto " + hm(t.last.t)); }
@@ -956,11 +984,12 @@ function renderCluster() {
 }
 function renderActions() {
   const stg = day.stage, run = stg === "running";
-  const homePend = run && pendingStops().some(o => isHomeStop(o.s));
-  $("actStart").disabled = stg !== "idle"; $("actStop").disabled = !run; $("actEnd").disabled = !run;
+  const past = pastDay();
+  const homePend = run && (past || pendingStops().some(o => isHomeStop(o.s)));
+  $("actStart").disabled = stg !== "idle"; $("actStop").disabled = !run || past; $("actEnd").disabled = !run;
   $("actStartS").textContent = stg === "idle" ? (cfg.armed ? "Se iniciará solo al salir de casa" : "Foto del odómetro y empieza a grabar") : stg === "rest" ? "Hoy es día de descanso" : "Iniciado a las " + (day.startedAt ? hm(day.startedAt) : "—") + (dayKmStart() !== null ? " · km " + fmt(dayKmStart()) : "");
   $("actStopS").textContent = run ? "Tramo " + (day.done.length + 1) + " · foto del odómetro y asunto" : stg === "closed" ? (day.done.length - 1 === 1 ? "1 parada registrada" : day.done.length - 1 > 1 ? day.done.length - 1 + " paradas registradas" : "Sin paradas") : "Disponible al iniciar el día";
-  $("actEndS").textContent = homePend ? "Llegaste al domicilio: cierra el día" : run ? "Foto del odómetro al llegar" : stg === "closed" ? "Cerrado" + (day.endedAt ? " a las " + hm(day.endedAt) : "") + (day.kmEnd != null ? " · km " + fmt(day.kmEnd) : "") : "Disponible al iniciar el día";
+  $("actEndS").textContent = past ? "Cierra primero el " + fechaLarga(day.date) : homePend ? "Llegaste al domicilio: cierra el día" : run ? "Foto del odómetro al llegar" : stg === "closed" ? "Cerrado" + (day.endedAt ? " a las " + hm(day.endedAt) : "") + (day.kmEnd != null ? " · km " + fmt(day.kmEnd) : "") : "Disponible al iniciar el día";
   $("actStart").classList.toggle("next", stg === "idle");
   $("actStop").classList.toggle("next", run && !homePend);
   $("actEnd").classList.toggle("next", homePend);
@@ -1285,11 +1314,11 @@ $("cfgSave").onclick = async () => {
 // ---------- recordatorios dentro de la app ----------
 function checkReminders() {
   const now = new Date(), mins = now.getHours() * 60 + now.getMinutes();
+  if (pastDay()) { if (!flow) openFinish(); return; }   // un día anterior quedó abierto: se cierra primero
   const work = !!((cfg.workDays >> now.getDay()) & 1);
   if (!work || day.stage === "rest") return;
   if (day.stage === "idle" && !cfg.armed && mins >= cfg.startAt) showAlert("start", "Aún no registras el inicio de día", "Toca Inicio de día y toma la foto del odómetro, o marca el día como descanso.");
   if (day.stage === "running" && mins >= cfg.endAt) showAlert("end", "Ya es hora de cerrar el día", "Toca Fin de día y toma la foto del odómetro.");
-  if (day.stage === "running" && day.date !== today()) showAlert("end", "El día " + fechaLarga(day.date) + " sigue abierto", "Ciérralo con Fin de día.");
 }
 
 // ---------- pintar ----------
