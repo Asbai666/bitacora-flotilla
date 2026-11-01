@@ -35,7 +35,8 @@ function doPost(e) {
     if (req.token !== CONFIG.TOKEN) return json_({ ok: false, error: 'Clave de acceso incorrecta' });
     lock.waitLock(30000);
     switch (req.action) {
-      case 'ping':   fixTotals_(sh_()); return json_({ ok: true, version: 3 });
+      case 'ping':   fixTotals_(sh_()); return json_({ ok: true, version: 4 });
+      case 'xlsx':   return json_(xlsx_());
       case 'carga':  return json_(carga_(req));
       case 'read':   return json_(read_());
       case 'save':   return json_(save_(req));
@@ -119,6 +120,8 @@ function fixTotals_(sh) {
   sh.getRange(tot, 4).setFormula('=SUM(D' + f + ':D' + last + ')');
   sh.getRange(tot, 9).setFormula('=SUM(I' + f + ':I' + last + ')');
   sh.getRange(tot, 13).setFormula('=IFERROR(I' + tot + '/D' + tot + ',0)');
+  sh.getRange(f, 2, last - f + 1, 1).setNumberFormat('dd/mm/yyyy');
+  sh.getRange(f, 6, last - f + 1, 1).setNumberFormat('dd/mm/yyyy');
 }
 
 function rowFilled_(r) { return [0, 1, 2, 3, 4, 5, 6, 7, 9, 11, 12, 13, 14].some(i => !blank_(r[i])); }
@@ -180,6 +183,8 @@ function writeRow_(sh, r, e) {
     num_(e.kmIni),                   // G  KILOMETRAJE INICIAL
     num_(e.kmFin)                    // H  KILOMETRAJE FINAL
   ]]);
+  sh.getRange(r, 2).setNumberFormat('dd/mm/yyyy');
+  sh.getRange(r, 6).setNumberFormat('dd/mm/yyyy');
   sh.getRange(r, 9).setFormula('=IF(OR(G' + r + '="",H' + r + '=""),"",H' + r + '-G' + r + ')'); // I KM RECORRIDO
   sh.getRange(r, 10).setValue(e.asunto || '');   // J  ASUNTO (J:K combinadas)
   sh.getRange(r, 12, 1, 4).setValues([[e.de || '', e.deC || '', e.a || '', e.aC || '']]); // L–O TRASLADO
@@ -327,6 +332,27 @@ function dateTime_(iso, hora) {
   const p = String(iso).split('-').map(Number);
   const h = String(hora || '').match(/(\d{1,2}):(\d{2})/);
   return h ? new Date(p[0], p[1] - 1, p[2], Number(h[1]), Number(h[2]), 0) : new Date(p[0], p[1] - 1, p[2], 12, 0, 0);
+}
+
+// ---------- copia en Excel (XLSX) para compartir ----------
+// Exporta todo el libro (Bitácora y pestañas de Evidencia con sus fotos) tal como está en Google Sheets.
+function xlsx_() {
+  SpreadsheetApp.flush();
+  const url = 'https://docs.google.com/spreadsheets/d/' + CONFIG.SHEET_ID + '/export?format=xlsx';
+  const res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) throw new Error('Google no generó el archivo XLSX (código ' + res.getResponseCode() + ')');
+  const sh = sh_();
+  const mes = String(sh.getRange('B5').getValue() || '').trim() || Utilities.formatDate(new Date(), 'America/Mexico_City', 'MM-yyyy');
+  const placas = String(sh.getRange('L5').getValue() || '').trim();
+  const name = 'Bitacora Flotilla ' + mes + (placas ? ' ' + placas : '') + '.xlsx';
+  const bytes = res.getBlob().getBytes();
+  return { ok: true, name: name, size: bytes.length, b64: Utilities.base64Encode(bytes) };
+}
+
+// Ejecuta esta función una vez desde el editor (botón ▶ Ejecutar) para dar el permiso de exportar.
+function autorizar() {
+  const r = xlsx_();
+  Logger.log('Listo: ' + r.name + ' (' + Math.round(r.size / 1024) + ' KB)');
 }
 
 // ---------- día de descanso ----------

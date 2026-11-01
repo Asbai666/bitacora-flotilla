@@ -28,8 +28,8 @@ jobs:
       - name: Publicar descarga
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.5.${{ github.run_number }}
-          name: Bitácora Flotilla 2.5.${{ github.run_number }}
-          body: "v2.5 · la grabación sigue después de medianoche y tras reinicios o actualizaciones; un día que quedó abierto se cierra con lo grabado; mapa con calles de OpenStreetMap; lecturas del odómetro que no cuadran con el GPS piden confirmación."
+          tag_name: v2.6.${{ github.run_number }}
+          name: Bitácora Flotilla 2.6.${{ github.run_number }}
+          body: "v2.6 · el mapa ya no queda encima de las ventanas, botones en una fila con la lista del recorrido debajo y exportación de la hoja a XLSX para WhatsApp (requiere actualizar Code.gs)."
           files: BitacoraFlotilla.apk
           make_latest: true

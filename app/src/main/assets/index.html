@@ -205,7 +205,7 @@ details .card{border:0;padding:0;background:transparent}
 .stack{display:grid;gap:14px}
 /* ---- mini mapa del recorrido ---- */
 .mapcard{background:linear-gradient(180deg,#141d25,#0e1419);border:1px solid var(--line);border-radius:22px;padding:10px;display:grid;gap:10px}
-.mapwrap{position:relative;height:230px;border-radius:14px;overflow:hidden;border:1px solid #1f2a33;transition:height .25s}
+.mapwrap{position:relative;isolation:isolate;z-index:0;height:210px;border-radius:14px;overflow:hidden;border:1px solid #1f2a33;transition:height .25s}
 .mapwrap.tall{height:62vh}
 #map{position:absolute;inset:0;background:#0e1419}
 .leaflet-container{background:#0e1419;font-family:var(--body)}
@@ -228,13 +228,14 @@ details .card{border:0;padding:0;background:transparent}
 header{min-width:0} .brand{flex:1 1 auto} .hd-r{flex:none} .wrap>*{min-width:0} .legs .leg .m{max-width:96px}
 html,body{overflow-x:hidden}
 /* ---- las tres acciones ---- */
-.acts{display:grid;gap:10px}
-.act{display:grid;grid-template-columns:56px 1fr 18px;align-items:center;gap:14px;padding:14px 16px;border-radius:18px;text-align:left;border:1px solid var(--line);background:var(--panel);width:100%;font-weight:400}
-.act .ic{width:56px;height:56px;border-radius:16px;display:grid;place-items:center}
+.acts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.acthint{text-align:center;font-size:12.5px;color:var(--muted);margin-top:-6px}
+.acthint b{color:var(--ink)}
+.act{display:grid;justify-items:center;align-content:start;gap:8px;padding:12px 6px;border-radius:18px;text-align:center;border:1px solid var(--line);background:var(--panel);width:100%;font-weight:400}
+.act .ic{width:48px;height:48px;border-radius:14px;display:grid;place-items:center}
 .act .ic svg{width:30px;height:30px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
-.act b{display:block;font-family:var(--display);font-size:20px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;line-height:1.1}
-.act .s{display:block;font-size:12.5px;color:var(--muted);margin-top:3px}
-.act .chev{color:var(--dim);font-size:22px;font-weight:400}
+.act b{display:block;font-family:var(--display);font-size:13.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1.15}
+.act .s,.act .chev{display:none}
 .act.start .ic{background:var(--led);color:#04210f}
 .act.stop .ic{background:var(--fuel);color:#1b1203}
 .act.end .ic{background:#4aa3ff;color:#04121f}
@@ -309,6 +310,7 @@ html,body{overflow-x:hidden}
       <button class="act stop" id="actStop"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg></span><span><b>Agregar parada</b><span class="s" id="actStopS"></span></span><span class="chev">›</span></button>
       <button class="act end" id="actEnd"><span class="ic"><svg viewBox="0 0 24 24"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg></span><span><b>Fin de día</b><span class="s" id="actEndS"></span></span><span class="chev">›</span></button>
     </section>
+    <div class="acthint" id="actHint"></div>
 
     <section class="card" id="today" hidden></section>
   </div>
@@ -357,6 +359,10 @@ html,body{overflow-x:hidden}
       <label>Dirección del servicio de Google (/exec)<input id="sUrl" autocomplete="off"></label>
       <button class="ghost small" id="btnPing">Probar conexión</button>
 
+      <h3>Exportar</h3>
+      <p class="hint">Copia en Excel (.xlsx) de la hoja tal como está en Google: la Bitácora y las pestañas de Evidencia con sus fotos. Se guarda en Descargas y se abre Compartir para mandarla por WhatsApp.</p>
+      <button class="primary" id="btnXlsx">Exportar XLSX y compartir</button>
+
       <h3>Permisos para trabajar en segundo plano</h3>
       <div id="perms"></div>
       <button class="ghost small" id="btnTest">Probar alerta</button>
@@ -377,7 +383,7 @@ html,body{overflow-x:hidden}
       <label>Usuario (No. de empleado _ Nombre completo)<input id="vUser"></label>
       <label>TAG / No. de tarjeta<input id="vTag"></label>
       <div class="actions"><button class="primary" id="btnSaveSettings">Guardar ajustes</button></div>
-      <p class="hint" style="text-align:center">Bitácora Flotilla 2.5</p>
+      <p class="hint" style="text-align:center">Bitácora Flotilla 2.6</p>
     </div>
   </section>
 </div>

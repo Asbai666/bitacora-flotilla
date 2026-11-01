@@ -742,7 +742,7 @@ function openConfirm(s, i, row, kmEst) {
   const ini = num(done.entry.kmIni);
   openModal(sh => {
     sh.append(el("h2", "", "Parada " + (i + 1) + " · fila " + row),
-      el("p", "hint", (s.address || coordStr(s.lat, s.lon)) + " · " + hm(s.start) + (s.open ? " (sigues aquí)" : "–" + hm(s.end)) + ". Se registró sola con el km estimado por GPS. Escribe el asunto; la foto del odómetro corrige el km."));
+      el("p", "hint", (s.address || coordStr(s.lat, s.lon)) + " · " + hm(s.start) + (s.open ? " (sigues aquí)" : "–" + hm(s.end)) + (s.manual ? ". Ya está registrada; aquí puedes cambiar el asunto o corregir el km con la foto." : ". Se registró sola con el km estimado por GPS. Escribe el asunto; la foto del odómetro corrige el km.")));
     const asu = asuntoField(sh, done.entry.asunto || "");
     const d = el("div"); d.id = "shot-" + kp; sh.appendChild(d);
     const ik = kmField(sh, "Km en esta parada", num(done.entry.kmFin) ?? kmEst, !(day.stopsDone[s.start] || {}).confirmed);
@@ -965,11 +965,11 @@ function renderCluster() {
   $("tKm").textContent = fmt(kmUse, kmOdo !== null ? 0 : 1);
   $("tKmS").textContent = kmOdo !== null ? "GPS " + fmt(kmGps, 1) : "por GPS";
   $("tRend").textContent = ms.rend !== null ? fmt(ms.rend, 1) : "—";
-  $("tRendS").textContent = ms.rend !== null ? "rend. del mes" : "sin cargas";
+  $("tRendS").textContent = ms.rend !== null ? "del mes" : "sin cargas";
   const lit = ms.rend ? kmUse / ms.rend : null;
   $("tLit").textContent = lit !== null && active ? fmt(lit, 1) + " L" : "—";
-  $("tLitS").textContent = ms.rend ? "hoy, estimado" : "sin rendimiento";
-  $("tGas").textContent = lit !== null && precio && active ? money(lit * precio) : "—";
+  $("tLitS").textContent = ms.rend ? "estimado" : "sin datos";
+  $("tGas").textContent = lit !== null && precio && active ? "$" + fmt(lit * precio, lit * precio >= 100 ? 0 : 2) : "—";
   $("tGasS").textContent = precio ? money(precio) + "/L" : "estimado";
   const st = $("gStatus"); st.className = "status"; st.textContent = "";
   if (pastDay()) { st.className = "status warn"; st.append("El " + fechaLarga(day.date) + " sigue abierto" + (t.last ? " · último punto " + hm(t.last.t) : "") + " "); const b = el("button", "statusbtn", "Cerrarlo"); b.onclick = () => openFinish(); st.appendChild(b); }
@@ -993,13 +993,16 @@ function renderActions() {
   $("actStart").classList.toggle("next", stg === "idle");
   $("actStop").classList.toggle("next", run && !homePend);
   $("actEnd").classList.toggle("next", homePend);
+  // indicación de lo que sigue, debajo de los botones
+  const nx = stg === "idle" ? ["Inicio de día", $("actStartS").textContent] : past || homePend ? ["Fin de día", $("actEndS").textContent] : run ? ["Agregar parada", $("actStopS").textContent] : stg === "closed" ? ["Día cerrado", $("actEndS").textContent.replace(/^Cerrado ?/, "")] : ["Descanso", "Hoy no se registra recorrido"];
+  const h = $("actHint"); h.textContent = ""; h.appendChild(el("b", "", nx[0])); h.append(" · " + nx[1]);
 }
 function renderTimeline() {
   const box = $("today"); box.textContent = "";
   if (day.stage !== "running" && day.stage !== "closed") { box.hidden = true; return; }
   box.hidden = false;
   const t = trackInfo();
-  const head = el("div", "row2"); head.append(el("h3", "", "Recorrido de hoy"), el("span", "hint", fmt(t.km || 0, 1) + " km GPS · " + t.stops.length + " paradas")); box.appendChild(head);
+  const head = el("div", "row2"); head.append(el("h3", "", "Recorrido de hoy"), el("span", "hint", fmt(t.km || 0, 1) + " km GPS · " + t.stops.length + (t.stops.length === 1 ? " parada" : " paradas"))); box.appendChild(head);
   const legs = el("div", "legs"); box.appendChild(legs);
   const leg = (cls, n, title, sub, right, onClick) => {
     const r = el("div", "leg " + cls); const a = el("div", "a");
@@ -1282,6 +1285,18 @@ function renderPerms() {
   row("Alarmas a la hora exacta", p.exactAlarm, () => A.exactAlarms());
   if (!p.location || !p.notifications || !p.background) row("Si negaste un permiso", false, () => A.appSettings(), "Abrir ajustes");
 }
+$("btnXlsx").onclick = async () => {
+  if (!cfg.scriptUrl) { banner("bad", "Primero conecta tu hoja", ""); return; }
+  const b = $("btnXlsx"); b.disabled = true; b.textContent = "Generando el archivo…";
+  const r = await nat("exportXlsx");
+  b.disabled = false; b.textContent = "Exportar XLSX y compartir";
+  if (!r.ok) {
+    const perm = /permis|authoriz|autoriz|UrlFetch|external/i.test(r.error || "");
+    banner("bad", "No se generó el XLSX", perm ? "Falta autorizar la exportación en Apps Script: ejecuta la función “autorizar” una vez y vuelve a implementar." : r.error);
+    return;
+  }
+  banner("ok", "XLSX listo", r.name + " (" + Math.max(1, Math.round(r.size / 1024)) + " KB)" + (r.local ? " · también en " + r.local : "") + ".", null, "xlsx");
+};
 $("btnTest").onclick = () => { A.testAlert(); beep(); };
 $("btnSaveSettings").onclick = async () => {
   let wd = 0; DAYN.forEach((n, i) => { if ($("day" + i).checked) wd |= 1 << i; });

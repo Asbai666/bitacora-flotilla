@@ -128,7 +128,7 @@ class MainActivity : AppCompatActivity() {
         if (!fresh) try {
             val c = (java.net.URL(u.toString()).openConnection() as java.net.HttpURLConnection).apply {
                 connectTimeout = 10_000; readTimeout = 15_000
-                setRequestProperty("User-Agent", "BitacoraFlotilla/2.5 (Android; mx.ajm.bitacora)")
+                setRequestProperty("User-Agent", "BitacoraFlotilla/2.6 (Android; mx.ajm.bitacora)")
                 setRequestProperty("Referer", "https://github.com/Asbai666/bitacora-flotilla")
             }
             if (c.responseCode == 200) { val bytes = c.inputStream.use { it.readBytes() }; f.writeBytes(bytes) }
@@ -358,6 +358,29 @@ class MainActivity : AppCompatActivity() {
                         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     withContext(Dispatchers.Main) { startActivity(Intent.createChooser(send, "Compartir recorrido KML")) }
                     reply(cb, JSONObject().put("ok", true).put("local", local ?: JSONObject.NULL).put("name", f.name))
+                } catch (e: Throwable) { fail(cb, e) }
+            }
+        }
+
+        /** Copia en Excel de la hoja (con las pestañas de Evidencia): la guarda en Descargas y abre Compartir (WhatsApp, correo…). */
+        @JavascriptInterface fun exportXlsx(cb: Int) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    val r = Backend(prefs).call("xlsx", JSONObject())
+                    val bytes = android.util.Base64.decode(r.getString("b64"), android.util.Base64.DEFAULT)
+                    val name = r.optString("name", "Bitacora Flotilla.xlsx").replace(Regex("[\\\\/:*?\"<>|]"), "-")
+                    val dir = java.io.File(cacheDir, "exports").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
+                    val f = java.io.File(dir, name); f.writeBytes(bytes)
+                    val mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    val local = saveToDownloads(name, mime, bytes)
+                    val uri = FileProvider.getUriForFile(this@MainActivity, "mx.ajm.bitacora.files", f)
+                    val send = Intent(Intent.ACTION_SEND).setType(mime)
+                        .putExtra(Intent.EXTRA_STREAM, uri)
+                        .putExtra(Intent.EXTRA_SUBJECT, name.removeSuffix(".xlsx"))
+                        .putExtra(Intent.EXTRA_TEXT, "Bitácora de uso del vehículo " + prefs.plates + " · " + prefs.name)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    withContext(Dispatchers.Main) { startActivity(Intent.createChooser(send, "Enviar bitácora en Excel")) }
+                    reply(cb, JSONObject().put("ok", true).put("name", name).put("size", bytes.size).put("local", local ?: JSONObject.NULL))
                 } catch (e: Throwable) { fail(cb, e) }
             }
         }

@@ -20,3 +20,10 @@ Si después cambias el código: **Implementar → Administrar implementaciones �
 2. Reemplaza todo el contenido de `Código.gs` con el nuevo `Code.gs` y guarda.
 3. **Implementar → Administrar implementaciones → lápiz → Versión: Nueva versión → Implementar.**
 4. Si Google pide permisos otra vez, acéptalos. La URL /exec no cambia.
+
+## Actualizar a la versión 4 (app 2.6: exportar XLSX)
+
+1. Abre la hoja → **Extensiones → Apps Script** y reemplaza `Código.gs` con el nuevo `Code.gs`. Guarda.
+2. Arriba, en la lista de funciones elige **autorizar** y toca **▶ Ejecutar**. Google pide un permiso nuevo
+   ("conectarse a un servicio externo", que se usa para generar el archivo de Excel): **Revisar permisos → tu cuenta → Configuración avanzada → Ir a … → Permitir**.
+3. **Implementar → Administrar implementaciones → lápiz → Versión: Nueva versión → Implementar.** La URL /exec no cambia.
