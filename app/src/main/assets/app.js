@@ -867,21 +867,6 @@ async function shareKml(scope) {
   else if (r.local) banner("ok", "KML listo", "También quedó en " + r.local + ".", null, "kml");
 }
 async function startTracking() { const t = await nat("startTracking"); if (!t.ok) banner("bad", "No se pudo reanudar", t.error || ""); renderToday(); }
-(function drawTicks() {
-  const g = $("ticks"); const NS = "http://www.w3.org/2000/svg";
-  for (let i = 0; i <= 20; i++) {
-    const a = Math.PI - i / 20 * Math.PI, major = i % 5 === 0;
-    const r1 = major ? 104 : 110, r2 = 118;
-    const l = document.createElementNS(NS, "line");
-    l.setAttribute("x1", 160 + r1 * Math.cos(a)); l.setAttribute("y1", 160 - r1 * Math.sin(a));
-    l.setAttribute("x2", 160 + r2 * Math.cos(a)); l.setAttribute("y2", 160 - r2 * Math.sin(a));
-    l.setAttribute("stroke", major ? "#c7d1d7" : "#4a5862"); l.setAttribute("stroke-width", major ? 3 : 1.5); l.setAttribute("stroke-linecap", "round");
-    g.appendChild(l);
-  }
-  const mid = document.createElementNS(NS, "text");
-  mid.setAttribute("x", 160); mid.setAttribute("y", 14); mid.setAttribute("fill", "#8a9aa5"); mid.setAttribute("font-size", "13"); mid.setAttribute("text-anchor", "middle"); mid.setAttribute("font-family", "monospace"); mid.id = "gMid";
-  g.appendChild(mid);
-})();
 function monthStats() {
   let km = 0, lit = 0, imp = 0;
   (sheet.rows || []).forEach(x => {
@@ -891,30 +876,82 @@ function monthStats() {
   });
   return { km, lit, imp, rend: lit > 0 ? km / lit : null };
 }
+// ---------- mini mapa y tarjetas ----------
+let map = null, routeLine = null, marks = null, lastSig = "", userMoved = false, fitting = false;
+function initMap() {
+  if (map || !window.L) { if (!window.L) $("mapBadge").textContent = "Mapa no disponible"; return; }
+  map = L.map("map", { zoomControl: false, attributionControl: true, preferCanvas: true, tap: true }).setView([19.83, -99.21], 13);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { subdomains: "abcd", maxZoom: 19, attribution: "© OpenStreetMap · © CARTO" }).addTo(map);
+  routeLine = L.polyline([], { color: "#ffb020", weight: 4, opacity: .95, lineJoin: "round" }).addTo(map);
+  marks = L.layerGroup().addTo(map);
+  map.on("movestart", () => { if (!fitting) userMoved = true; });
+}
+function fitMap(pts, stops) {
+  if (!map) return;
+  fitting = true;
+  const all = pts.concat(stops.map(s => [s.lat, s.lon]));
+  if (all.length > 1) map.fitBounds(L.latLngBounds(all), { padding: [26, 26], maxZoom: 16, animate: false });
+  else if (all.length === 1) map.setView(all[0], 15, { animate: false });
+  else if (home()) map.setView([home().lat, home().lon], 14, { animate: false });
+  setTimeout(() => { fitting = false; }, 300);
+}
+function renderMap(t) {
+  initMap(); if (!map) return;
+  const active = day.stage === "running" || day.stage === "closed";
+  let pts = [];
+  if (active) { try { pts = JSON.parse(A.route(day.date)); } catch (e) { pts = []; } }
+  const stops = active ? t.stops : [];
+  routeLine.setLatLngs(pts);
+  marks.clearLayers();
+  if (home()) L.marker([home().lat, home().lon], { icon: L.divIcon({ className: "pinhome", html: "⌂", iconSize: [20, 20] }), keyboard: false }).bindTooltip("Domicilio").addTo(marks);
+  if (pts.length) L.circleMarker(pts[0], { radius: 6, color: "#0b0f12", weight: 2, fillColor: "#3ddc84", fillOpacity: 1 }).bindTooltip("Salida").addTo(marks);
+  stops.forEach((s, i) => {
+    const st = day.stopsDone[s.start];
+    const m = L.marker([s.lat, s.lon], { icon: L.divIcon({ className: "pinnum " + (st && st.row ? "done" : "pend"), html: String(i + 1), iconSize: [22, 22] }) });
+    const dn = st && st.row ? day.done.find(d => d.row === st.row) : null;
+    m.bindTooltip((s.address || coordStr(s.lat, s.lon)) + (dn && dn.entry.asunto ? " · " + dn.entry.asunto : ""));
+    m.on("click", () => { if (st && st.row) openConfirm(s, i, st.row, st.km); else if (isHomeStop(s)) openFinish(s); else autoRegisterPending(); });
+    m.addTo(marks);
+  });
+  if (day.stage === "running" && pts.length) L.circleMarker(pts[pts.length - 1], { radius: 7, color: "#fff", weight: 2, fillColor: "#4aa3ff", fillOpacity: 1, className: "pulse" }).bindTooltip("Ubicación actual").addTo(marks);
+  const sig = day.stage + "|" + pts.length + "|" + stops.length;
+  if (sig !== lastSig && !userMoved) fitMap(pts, stops);
+  lastSig = sig;
+  const badge = $("mapBadge");
+  badge.textContent = day.stage === "running" ? "● Grabando · " + fmt(t.km || 0, 1) + " km" : day.stage === "closed" ? "Recorrido del día · " + fmt(t.km || 0, 1) + " km" : day.stage === "rest" ? "Día de descanso" : cfg.armed ? "Esperando la salida de casa" : "Sin recorrido hoy";
+}
+$("mapCenter").onclick = () => { userMoved = false; lastSig = ""; renderCluster(); };
+$("mapSize").onclick = () => { $("mapWrap").classList.toggle("tall"); setTimeout(() => { if (map) { map.invalidateSize(); userMoved = false; lastSig = ""; renderCluster(); } }, 280); };
+
 function renderCluster() {
   const t = trackInfo();
-  const km = day.stage === "running" || day.stage === "closed" ? (t.km || 0) : 0;
-  const scales = [50, 100, 200, 300, 500, 800, 1200];
-  const max = scales.find(s => s >= km * 1.1) || scales[scales.length - 1];
-  const pct = Math.max(0, Math.min(1, km / max));
-  $("gMax").textContent = max; $("gMid").textContent = max / 2;
-  $("arcFill").setAttribute("stroke-dasharray", (pct * 100).toFixed(2) + " 100");
-  $("arcFill").style.opacity = pct > 0.005 ? 1 : 0;
-  $("needle").style.transform = "rotate(" + (-90 + pct * 180) + "deg)";
-  $("gKm").textContent = fmt(km, 1);
-  let odo = null; const ini = num(day.entry.kmIni);
-  if (day.stage === "running" && ini !== null) odo = ini + (tramoKm() || 0);
-  else if (day.stage === "closed") odo = day.kmEnd ?? lastKnownKm();
-  else odo = lastKnownKm();
-  drums($("gEst"), odo, 6, true);
+  renderMap(t);
+  const active = day.stage === "running" || day.stage === "closed";
+  const kmGps = active ? (t.km || 0) : 0;
+  const ini = num(day.entry.kmIni), start = dayKmStart();
+  let kmOdo = null;
+  if (day.stage === "running" && ini !== null && start !== null) kmOdo = Math.max(0, ini + (tramoKm() || 0) - start);
+  else if (day.stage === "closed" && day.kmEnd != null && start !== null) kmOdo = day.kmEnd - start;
+  const ms = monthStats();
+  const precio = ms.lit > 0 ? ms.imp / ms.lit : null;
+  const kmUse = kmOdo ?? kmGps;
+  $("tKm").textContent = fmt(kmUse, kmOdo !== null ? 0 : 1);
+  $("tKmS").textContent = kmOdo !== null ? "GPS " + fmt(kmGps, 1) : "por GPS";
+  $("tRend").textContent = ms.rend !== null ? fmt(ms.rend, 1) : "—";
+  $("tRendS").textContent = ms.rend !== null ? "rend. del mes" : "sin cargas";
+  const lit = ms.rend ? kmUse / ms.rend : null;
+  $("tLit").textContent = lit !== null && active ? fmt(lit, 1) + " L" : "—";
+  $("tLitS").textContent = ms.rend ? "hoy, estimado" : "sin rendimiento";
+  $("tGas").textContent = lit !== null && precio && active ? money(lit * precio) : "—";
+  $("tGasS").textContent = precio ? money(precio) + "/L" : "estimado";
   const st = $("gStatus"); st.className = "status"; st.textContent = "";
   if (day.stage === "running") {
     if (!t.active) { st.className = "status warn"; st.append("La grabación del GPS está detenida "); const b = el("button", "statusbtn", "Reanudar"); b.onclick = startTracking; st.appendChild(b); }
     else if (t.last && Date.now() - t.last.t > 5 * 60000) { st.className = "status warn"; st.textContent = "Sin señal de GPS desde las " + hm(t.last.t); }
-    else { st.append("Grabando GPS"); if (t.last) { st.append(" · último punto "); st.appendChild(el("b", "", hm(t.last.t))); } }
+    else { st.append("Odómetro ≈ "); st.appendChild(el("b", "", ini !== null ? fmt(Math.round(ini + (tramoKm() || 0))) + " km" : "—")); if (t.last) st.append(" · último punto " + hm(t.last.t)); }
   } else if (day.stage === "idle" && cfg.armed) { st.append("Esperando la salida del domicilio para grabar "); const b = el("button", "statusbtn", "Cancelar"); b.onclick = () => { A.disarm(); setTimeout(() => { cfg = JSON.parse(A.config()); render(); }, 300); }; st.appendChild(b); }
-  else if (day.stage === "idle") st.textContent = "Odómetro según el último registro";
-  else if (day.stage === "closed") st.textContent = "Día cerrado" + (day.endedAt ? " a las " + hm(day.endedAt) : "");
+  else if (day.stage === "idle") st.textContent = "Último km registrado: " + (lastKnownKm() !== null ? fmt(lastKnownKm()) : "—");
+  else if (day.stage === "closed") st.textContent = "Día cerrado" + (day.endedAt ? " a las " + hm(day.endedAt) : "") + (day.kmEnd != null ? " · km " + fmt(day.kmEnd) : "");
   else if (day.stage === "rest") st.textContent = "Día de descanso";
 }
 function renderActions() {
@@ -922,7 +959,7 @@ function renderActions() {
   const homePend = run && pendingStops().some(o => isHomeStop(o.s));
   $("actStart").disabled = stg !== "idle"; $("actStop").disabled = !run; $("actEnd").disabled = !run;
   $("actStartS").textContent = stg === "idle" ? (cfg.armed ? "Se iniciará solo al salir de casa" : "Foto del odómetro y empieza a grabar") : stg === "rest" ? "Hoy es día de descanso" : "Iniciado a las " + (day.startedAt ? hm(day.startedAt) : "—") + (dayKmStart() !== null ? " · km " + fmt(dayKmStart()) : "");
-  $("actStopS").textContent = run ? "Tramo " + (day.done.length + 1) + " · foto del odómetro y asunto" : stg === "closed" ? (day.done.length - 1 > 0 ? day.done.length - 1 + " paradas registradas" : "Sin paradas") : "Disponible al iniciar el día";
+  $("actStopS").textContent = run ? "Tramo " + (day.done.length + 1) + " · foto del odómetro y asunto" : stg === "closed" ? (day.done.length - 1 === 1 ? "1 parada registrada" : day.done.length - 1 > 1 ? day.done.length - 1 + " paradas registradas" : "Sin paradas") : "Disponible al iniciar el día";
   $("actEndS").textContent = homePend ? "Llegaste al domicilio: cierra el día" : run ? "Foto del odómetro al llegar" : stg === "closed" ? "Cerrado" + (day.endedAt ? " a las " + hm(day.endedAt) : "") + (day.kmEnd != null ? " · km " + fmt(day.kmEnd) : "") : "Disponible al iniciar el día";
   $("actStart").classList.toggle("next", stg === "idle");
   $("actStop").classList.toggle("next", run && !homePend);
@@ -1270,6 +1307,7 @@ function showTab(t) {
   ["hoy", "reg", "aj"].forEach(k => { $("tab-" + k).hidden = k !== t; $("t-" + k).setAttribute("aria-selected", String(k === t)); });
   save("bitacora-tab", t); window.scrollTo(0, 0);
   if (t === "reg") renderList();
+  if (t === "hoy" && map) setTimeout(() => { map.invalidateSize(); renderCluster(); }, 50);
 }
 document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
 function renderConn() {

@@ -377,6 +377,17 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface fun trackKm(date: String, from: Double, to: Double): Double =
             Math.round(store.distanceKm(date.ifEmpty { Prefs.today() }, from.toLong(), if (to <= 0) Long.MAX_VALUE else to.toLong()) * 10) / 10.0
 
+        /** Puntos del recorrido del día para el mini mapa (reducidos a ~1500). */
+        @JavascriptInterface fun route(date: String): String {
+            val pts = store.points(date.ifEmpty { Prefs.today() }).filter { it.acc <= 50f }
+            val step = maxOf(1, pts.size / 1500)
+            val a = JSONArray()
+            pts.forEachIndexed { i, p ->
+                if (i % step == 0 || i == pts.size - 1) a.put(JSONArray().put(Math.round(p.lat * 1e6) / 1e6).put(Math.round(p.lon * 1e6) / 1e6))
+            }
+            return a.toString()
+        }
+
         @JavascriptInterface fun track(date: String): String =
             store.summary(date.ifEmpty { Prefs.today() }).put("active", prefs.tracking && prefs.trackDate == Prefs.today()).toString()
 

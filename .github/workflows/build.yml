@@ -28,8 +28,8 @@ jobs:
       - name: Publicar descarga
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.3.${{ github.run_number }}
-          name: Bitácora Flotilla 2.3.${{ github.run_number }}
-          body: "v2.3 · pantalla simple con tres botones: Inicio de día, Agregar parada y Fin de día. Cada uno lee el odómetro de la foto, lo compara con el recorrido grabado y llena el registro; al llegar a casa el cierre se abre ya lleno."
+          tag_name: v2.4.${{ github.run_number }}
+          name: Bitácora Flotilla 2.4.${{ github.run_number }}
+          body: "v2.4 · mini mapa con el recorrido del día (salida, paradas numeradas y ubicación actual) y tarjetas de km recorridos, rendimiento km/L del mes, litros y gasto estimados del día."
           files: BitacoraFlotilla.apk
           make_latest: true

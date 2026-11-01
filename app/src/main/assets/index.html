@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <title>Bitácora Flotilla</title>
+<link rel="stylesheet" href="leaflet/leaflet.css">
 <style>
 /* Tablero de instrumentos: medidor de km del día, odómetro de rodillos y pantalla tipo bomba para las cargas. */
 :root{
@@ -202,6 +203,27 @@ details .card{border:0;padding:0;background:transparent}
 .tabs button[aria-selected="true"]{color:var(--fuel);background:var(--fuel-soft)}
 
 .stack{display:grid;gap:14px}
+/* ---- mini mapa del recorrido ---- */
+.mapcard{background:linear-gradient(180deg,#141d25,#0e1419);border:1px solid var(--line);border-radius:22px;padding:10px;display:grid;gap:10px}
+.mapwrap{position:relative;height:230px;border-radius:14px;overflow:hidden;border:1px solid #1f2a33;transition:height .25s}
+.mapwrap.tall{height:62vh}
+#map{position:absolute;inset:0;background:#0e1419}
+.leaflet-container{background:#0e1419;font-family:var(--body)}
+.leaflet-control-attribution{background:rgba(11,15,18,.7)!important;color:#8a9aa5!important;font-size:9px!important}
+.leaflet-control-attribution a{color:#8a9aa5!important}
+.mapbadge{position:absolute;left:8px;top:8px;z-index:500;background:rgba(11,15,18,.82);border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:11.5px;font-weight:600;color:var(--ink);pointer-events:none}
+.mapbtns{position:absolute;right:8px;top:8px;z-index:500;display:grid;gap:6px}
+.mapbtns button{width:34px;height:34px;padding:0;border-radius:10px;background:rgba(11,15,18,.85);border:1px solid var(--line);color:var(--ink);font-size:16px;line-height:1}
+.pinnum{background:var(--fuel);color:#1b1203;border:2px solid #0b0f12;border-radius:50%;font:700 11px/18px var(--mono);text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.6)}
+.pinnum.done{background:var(--fuel)} .pinnum.pend{background:#0b0f12;color:var(--fuel);border-color:var(--fuel)}
+.pinhome{background:#0b0f12;border:2px solid var(--led);border-radius:6px;color:var(--led);font:700 11px/16px var(--body);text-align:center}
+.pulse{animation:pulse 1.4s infinite}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.tile{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:7px 8px;min-width:0}
+.tile .k{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .v{font-family:var(--mono);font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .s{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile:first-child .v{color:var(--fuel)}
 header{min-width:0} .brand{flex:1 1 auto} .hd-r{flex:none} .wrap>*{min-width:0} .legs .leg .m{max-width:96px}
 html,body{overflow-x:hidden}
 /* ---- las tres acciones ---- */
@@ -266,20 +288,18 @@ html,body{overflow-x:hidden}
       <div class="actions"><button class="primary small" id="btnHomeHere">Estoy en mi domicilio: guardar ubicación</button></div>
     </div>
 
-    <section class="cluster" aria-label="Tablero del día">
-      <div class="gauge">
-        <svg viewBox="0 0 320 190" aria-hidden="true">
-          <defs><linearGradient id="arcg" x1="0" x2="1"><stop offset="0" stop-color="#ff5a4f"/><stop offset=".25" stop-color="#ffb020"/><stop offset="1" stop-color="#3ddc84"/></linearGradient></defs>
-          <path d="M30 160 A130 130 0 0 1 290 160" fill="none" stroke="#1d2730" stroke-width="16" stroke-linecap="round"/>
-          <path id="arcFill" d="M30 160 A130 130 0 0 1 290 160" fill="none" stroke="url(#arcg)" stroke-width="16" stroke-linecap="round" pathLength="100" stroke-dasharray="0 100"/>
-          <g id="ticks"></g>
-          <g id="needle"><path d="M156 160 L160 46 L164 160 Z" fill="#ffb020"/><circle cx="160" cy="160" r="13" fill="#0e1419" stroke="#ffb020" stroke-width="3"/><circle cx="160" cy="160" r="4" fill="#fff"/></g>
-          <text x="30" y="186" fill="#8a9aa5" font-size="13" text-anchor="middle" font-family="monospace" id="gMin">0</text>
-          <text x="290" y="186" fill="#8a9aa5" font-size="13" text-anchor="middle" font-family="monospace" id="gMax">100</text>
-        </svg>
-        <div class="read"><div class="v" id="gKm">0.0</div><div class="k">km hoy · GPS</div></div>
+    <section class="mapcard" aria-label="Recorrido del día">
+      <div class="mapwrap" id="mapWrap">
+        <div id="map"></div>
+        <div class="mapbadge" id="mapBadge">Sin recorrido hoy</div>
+        <div class="mapbtns"><button id="mapCenter" aria-label="Centrar en el recorrido">◎</button><button id="mapSize" aria-label="Agrandar el mapa">⤢</button></div>
       </div>
-      <div class="odo-row"><span class="k">Odómetro</span><span class="drums empty" id="gEst"><span>-</span><span>-</span><span>-</span><span>-</span><span>-</span><span>-</span></span><span class="k">km</span></div>
+      <div class="tiles">
+        <div class="tile"><div class="k">Km hoy</div><div class="v" id="tKm">0.0</div><div class="s" id="tKmS">GPS</div></div>
+        <div class="tile"><div class="k">km/L</div><div class="v" id="tRend">—</div><div class="s" id="tRendS">km/L del mes</div></div>
+        <div class="tile"><div class="k">Litros</div><div class="v" id="tLit">—</div><div class="s" id="tLitS">estimado</div></div>
+        <div class="tile"><div class="k">Gasto</div><div class="v" id="tGas">—</div><div class="s" id="tGasS">estimado</div></div>
+      </div>
       <div class="status" id="gStatus"></div>
     </section>
 
@@ -356,7 +376,7 @@ html,body{overflow-x:hidden}
       <label>Usuario (No. de empleado _ Nombre completo)<input id="vUser"></label>
       <label>TAG / No. de tarjeta<input id="vTag"></label>
       <div class="actions"><button class="primary" id="btnSaveSettings">Guardar ajustes</button></div>
-      <p class="hint" style="text-align:center">Bitácora Flotilla 2.3</p>
+      <p class="hint" style="text-align:center">Bitácora Flotilla 2.4</p>
     </div>
   </section>
 </div>
@@ -369,6 +389,7 @@ html,body{overflow-x:hidden}
 
 <div class="modal" id="modal" hidden><div class="sheet" id="sheet"></div></div>
 
+<script src="leaflet/leaflet.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
