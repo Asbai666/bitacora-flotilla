@@ -43,10 +43,10 @@ h1{font-family:var(--display);font-weight:700;font-size:21px;margin:0;line-heigh
 
 /* ---- tablero ---- */
 .cluster{position:relative;background:linear-gradient(180deg,#141d25,#0e1419);border:1px solid var(--line);border-radius:22px;padding:14px 14px 12px;display:grid;gap:10px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 30px rgba(0,0,0,.35)}
-.gauge{position:relative;width:100%;max-width:340px;margin:0 auto}
+.gauge{position:relative;width:100%;max-width:250px;margin:0 auto}
 .gauge svg{width:100%;display:block}
 .gauge .read{text-align:center;margin-top:-4px}
-.gauge .read .v{font-family:var(--display);font-weight:700;font-size:40px;line-height:1;letter-spacing:.02em}
+.gauge .read .v{font-family:var(--display);font-weight:700;font-size:32px;line-height:1;letter-spacing:.02em}
 .gauge .read .k{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
 #needle{transition:transform .9s cubic-bezier(.3,1.4,.5,1);transform-origin:160px 160px}
 .odo-row{display:flex;justify-content:center;align-items:center;gap:10px}
@@ -126,7 +126,7 @@ button:disabled{opacity:.45}
 .chip.on{background:var(--fuel);color:#1b1203;border-color:transparent}
 .bigkm{font-family:var(--mono);font-size:30px;font-weight:700;text-align:center;letter-spacing:.08em;padding:12px}
 select{appearance:none}
-#setup{order:-2} #stepStart{order:-1}
+
 
 /* ---- tramos (paradas) ---- */
 .legs{display:grid;gap:0;position:relative}
@@ -200,6 +200,42 @@ details .card{border:0;padding:0;background:transparent}
 .tabs button{background:transparent;color:var(--muted);border:0;border-radius:12px;padding:8px 4px;display:grid;justify-items:center;gap:2px;font-size:12px;font-weight:700;letter-spacing:.04em}
 .tabs button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .tabs button[aria-selected="true"]{color:var(--fuel);background:var(--fuel-soft)}
+
+.stack{display:grid;gap:14px}
+header{min-width:0} .brand{flex:1 1 auto} .hd-r{flex:none} .wrap>*{min-width:0} .legs .leg .m{max-width:96px}
+html,body{overflow-x:hidden}
+/* ---- las tres acciones ---- */
+.acts{display:grid;gap:10px}
+.act{display:grid;grid-template-columns:56px 1fr 18px;align-items:center;gap:14px;padding:14px 16px;border-radius:18px;text-align:left;border:1px solid var(--line);background:var(--panel);width:100%;font-weight:400}
+.act .ic{width:56px;height:56px;border-radius:16px;display:grid;place-items:center}
+.act .ic svg{width:30px;height:30px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.act b{display:block;font-family:var(--display);font-size:20px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;line-height:1.1}
+.act .s{display:block;font-size:12.5px;color:var(--muted);margin-top:3px}
+.act .chev{color:var(--dim);font-size:22px;font-weight:400}
+.act.start .ic{background:var(--led);color:#04210f}
+.act.stop .ic{background:var(--fuel);color:#1b1203}
+.act.end .ic{background:#4aa3ff;color:#04121f}
+.act.next.start{border-color:rgba(61,220,132,.6);box-shadow:0 0 0 3px rgba(61,220,132,.12)}
+.act.next.stop{border-color:rgba(255,176,32,.6);box-shadow:0 0 0 3px rgba(255,176,32,.12)}
+.act.next.end{border-color:rgba(74,163,255,.65);box-shadow:0 0 0 3px rgba(74,163,255,.14)}
+.act:disabled{opacity:.38}
+/* ---- hojas de cada flujo ---- */
+.k2{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.cmpbox{display:grid;gap:6px}
+.place{background:#0d1318;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.place summary{font-weight:400;font-size:13.5px;display:block;color:var(--muted)}
+.place summary b{color:var(--ink);font-weight:600}
+.place summary .chg{float:right;color:var(--fuel);font-size:12px;font-weight:700}
+.place[open]{display:grid;gap:10px}
+.place[open] summary{margin-bottom:2px}
+.linkbtn{background:transparent;border:0;color:var(--rest);font-weight:600;padding:6px;font-size:13.5px}
+.leg{cursor:pointer}
+.leg.done .n{background:var(--fuel);color:#1b1203}
+.leg.end .n{border-color:#4aa3ff;background:#4aa3ff;color:#04121f}
+.foot{display:flex;gap:14px;justify-content:center;padding-top:6px;border-top:1px solid var(--line)}
+.foot button{background:transparent;border:0;color:var(--fuel);font-size:13px;padding:8px 4px}
+.chip.asu{font-family:var(--body);font-weight:600;font-size:13px}
+.statusbtn{background:transparent;border:1px solid var(--line);color:var(--ink);font-size:12px;padding:4px 10px;border-radius:999px}
 </style>
 </head>
 <body>
@@ -217,114 +253,46 @@ details .card{border:0;padding:0;background:transparent}
 
   <div id="banners" style="display:grid;gap:8px"></div>
 
-  <div id="tab-hoy" role="tabpanel" style="display:grid;gap:14px">
-  <!-- Tablero -->
-  <section class="cluster" id="cluster" aria-label="Tablero del día">
-    <div class="gauge">
-      <svg viewBox="0 0 320 190" aria-hidden="true">
-        <defs>
-          <linearGradient id="arcg" x1="0" x2="1"><stop offset="0" stop-color="#ff5a4f"/><stop offset=".25" stop-color="#ffb020"/><stop offset="1" stop-color="#3ddc84"/></linearGradient>
-        </defs>
-        <path d="M30 160 A130 130 0 0 1 290 160" fill="none" stroke="#1d2730" stroke-width="16" stroke-linecap="round"/>
-        <path id="arcFill" d="M30 160 A130 130 0 0 1 290 160" fill="none" stroke="url(#arcg)" stroke-width="16" stroke-linecap="round" pathLength="100" stroke-dasharray="0 100"/>
-        <g id="ticks"></g>
-        <g id="needle"><path d="M156 160 L160 46 L164 160 Z" fill="#ffb020"/><circle cx="160" cy="160" r="13" fill="#0e1419" stroke="#ffb020" stroke-width="3"/><circle cx="160" cy="160" r="4" fill="#fff"/></g>
-        <text x="30" y="186" fill="#8a9aa5" font-size="13" text-anchor="middle" font-family="monospace" id="gMin">0</text>
-        <text x="290" y="186" fill="#8a9aa5" font-size="13" text-anchor="middle" font-family="monospace" id="gMax">100</text>
-      </svg>
-      <div class="read"><div class="v" id="gKm">0.0</div><div class="k">km recorridos hoy · GPS</div></div>
-    </div>
-    <div class="odo-row"><span class="k">Odómetro</span><span class="drums empty" id="gEst"><span>-</span><span>-</span><span>-</span><span>-</span><span>-</span><span>-</span></span><span class="k">km</span></div>
-    <div class="minis">
-      <div class="mini"><div class="k">Paradas</div><div class="v" id="gStops">0</div></div>
-      <div class="mini"><div class="k">En ruta</div><div class="v" id="gTime">—</div></div>
-      <div class="mini"><div class="k">Rend. mes</div><div class="v" id="gRend">—</div></div>
-    </div>
-    <div class="status" id="gStatus">Sin grabar</div>
-  </section>
+  <div id="tab-hoy" role="tabpanel" class="stack">
+    <section class="card" id="setup" hidden>
+      <h2>Conecta tu hoja</h2>
+      <p class="hint">Pega la dirección del servicio de Google que termina en <b>/exec</b>.</p>
+      <label>Dirección del servicio<input id="cfgUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></label>
+      <div class="actions"><button class="primary" id="cfgSave">Probar y guardar</button></div>
+    </section>
 
-  <!-- Primera vez: conectar con la hoja -->
-  <section class="card" id="setup" hidden>
-    <h2>Conecta tu hoja</h2>
-    <p class="hint">La app escribe en “Bitácora Flotilla” por medio de un pequeño servicio de Google que se instala una sola vez desde la hoja (Extensiones → Apps Script). Pega aquí la dirección que termina en <b>/exec</b>.</p>
-    <label>Dirección del servicio<input id="cfgUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></label>
-    <div class="actions"><button class="primary" id="cfgSave">Probar y guardar</button></div>
-  </section>
-
-  <!-- Paso: inicio -->
-  <section class="card" id="stepStart" hidden>
-    <button class="go big" id="btnStart">Iniciar jornada</button>
-    <div class="row2"><h2>Arranque del día</h2><span class="hint" id="startWhen"></span></div>
-    <div class="note led" id="armBox" hidden>
-      <b>Esperando la salida del domicilio</b>
-      <div>El GPS empieza a grabar solo cuando el vehículo se aleje del domicilio. Puedes cerrar la app.</div>
-      <div class="actions"><button class="ghost small" id="btnDisarm">Cancelar espera</button></div>
-    </div>
     <div class="note fuel" id="homeHint" hidden>
-      <div>Define tu <b>domicilio particular</b> para que cada día salga de ahí y la grabación empiece sola al salir.</div>
+      <div>Guarda tu <b>domicilio particular</b>: de ahí sale el primer tramo y ahí se cierra el día.</div>
       <div class="actions"><button class="primary small" id="btnHomeHere">Estoy en mi domicilio: guardar ubicación</button></div>
     </div>
-    <p class="hint" id="startInfo">Toca Iniciar jornada: toma la foto del odómetro, la app lee el km inicial y empieza a grabar el recorrido desde tu domicilio.</p>
-    <input type="hidden" id="kmIni"><input type="hidden" id="fTras"><input type="hidden" id="de"><input type="hidden" id="deC"><input type="hidden" id="asunto">
-    <div class="err" id="startErr" hidden></div>
-    <div class="actions">
-      <button class="ghost" id="btnArm">Grabar al salir de casa</button>
-      <button class="warnbtn" id="btnRest">Día de descanso</button>
-    </div>
-    <button class="ghost" id="btnCargaIdle">Registrar carga de combustible</button>
-  </section>
 
-  <!-- Paso: en ruta -->
-  <section class="card" id="stepRun" hidden>
-    <div class="row2"><h2>En ruta</h2><span class="hint" id="runSince"></span></div>
-    <p class="hint" id="gIni"></p>
-    <div id="gpsWarn" class="note bad" hidden></div>
-    <div class="row2"><h3 id="stopsTitle">Tramos del día</h3><button class="primary small" id="btnAddStop">+ Parada aquí</button></div>
-    <div class="legs" id="stopList"></div>
-    <div class="actions">
-      <button class="ghost small" id="btnEarth">Ver en Google Earth</button>
-      <button class="ghost small" id="btnShareKml">Exportar KML</button>
-    </div>
-
-    <button class="ghost" id="btnCarga"><span style="display:inline-flex;gap:8px;align-items:center"><svg viewBox="0 0 24 24" style="width:20px;height:20px;stroke:var(--fuel);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M4 21V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v16"/><path d="M3 21h13"/><path d="M15 9h2a2 2 0 0 1 2 2v6a1.5 1.5 0 0 0 3 0V8l-3-3"/><path d="M7 7h5v4H7z"/></svg>Registrar carga de combustible</span></button>
-
-    <div class="sep" id="endBox">
-      <h3>Fin de jornada</h3>
-      <p class="hint">Cierra el último tramo: desde la última parada hasta donde termina el día.</p>
-      <div id="shot-fin"></div>
-      <div class="grid">
-        <label>Km final<input class="num" type="number" inputmode="numeric" id="kmFin"></label>
-        <div style="display:grid;gap:5px"><span class="hint">Tramo por odómetro</span><span class="drums" id="odo"><span>0</span></span></div>
+    <section class="cluster" aria-label="Tablero del día">
+      <div class="gauge">
+        <svg viewBox="0 0 320 190" aria-hidden="true">
+          <defs><linearGradient id="arcg" x1="0" x2="1"><stop offset="0" stop-color="#ff5a4f"/><stop offset=".25" stop-color="#ffb020"/><stop offset="1" stop-color="#3ddc84"/></linearGradient></defs>
+          <path d="M30 160 A130 130 0 0 1 290 160" fill="none" stroke="#1d2730" stroke-width="16" stroke-linecap="round"/>
+          <path id="arcFill" d="M30 160 A130 130 0 0 1 290 160" fill="none" stroke="url(#arcg)" stroke-width="16" stroke-linecap="round" pathLength="100" stroke-dasharray="0 100"/>
+          <g id="ticks"></g>
+          <g id="needle"><path d="M156 160 L160 46 L164 160 Z" fill="#ffb020"/><circle cx="160" cy="160" r="13" fill="#0e1419" stroke="#ffb020" stroke-width="3"/><circle cx="160" cy="160" r="4" fill="#fff"/></g>
+          <text x="30" y="186" fill="#8a9aa5" font-size="13" text-anchor="middle" font-family="monospace" id="gMin">0</text>
+          <text x="290" y="186" fill="#8a9aa5" font-size="13" text-anchor="middle" font-family="monospace" id="gMax">100</text>
+        </svg>
+        <div class="read"><div class="v" id="gKm">0.0</div><div class="k">km hoy · GPS</div></div>
       </div>
-      <div class="cmp" id="cmp">
-        <div><div class="k">Odómetro</div><div class="v" id="cOdo">—</div></div>
-        <div><div class="k">GPS tramo</div><div class="v" id="cGps">—</div></div>
-        <div><div class="k">Diferencia</div><div class="v" id="cDif">—</div></div>
-      </div>
-      <button class="ghost small" id="btnUseGps" hidden>Usar km final estimado por GPS</button>
-      <label>Llega a<input id="a" placeholder="Domicilio particular"></label>
-      <label>Asunto en el destino final<input id="aAsunto" placeholder="Regreso a domicilio"></label>
-      <label>Coordenadas de llegada<input class="num" id="aC" placeholder="19.784100, -99.193200"></label>
-      <button class="ghost small" id="btnArriveHome" hidden>Llegué a mi domicilio</button>
-      <div class="err" id="endErr" hidden></div>
-      <button class="primary big" id="btnEnd">Terminar jornada y guardar</button>
-    </div>
-  </section>
+      <div class="odo-row"><span class="k">Odómetro</span><span class="drums empty" id="gEst"><span>-</span><span>-</span><span>-</span><span>-</span><span>-</span><span>-</span></span><span class="k">km</span></div>
+      <div class="status" id="gStatus"></div>
+    </section>
 
-  <!-- Paso: cerrado / descanso -->
-  <section class="card" id="stepDone" hidden>
-    <h2 id="doneTitle">Día cerrado</h2>
-    <p class="hint" id="doneText"></p>
-    <div class="actions">
-      <button class="ghost" id="btnEarth2">Abrir en Google Earth</button>
-      <button class="ghost" id="btnShareKml2">Exportar KML</button>
-      <button class="ghost" id="btnCargaDone">Registrar carga</button>
-      <button class="ghost" id="btnNewDay" hidden>Empezar otra jornada</button>
-    </div>
-  </section>
+    <section class="acts" id="acts">
+      <button class="act start" id="actStart"><span class="ic"><svg viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></svg></span><span><b>Inicio de día</b><span class="s" id="actStartS"></span></span><span class="chev">›</span></button>
+      <button class="act stop" id="actStop"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg></span><span><b>Agregar parada</b><span class="s" id="actStopS"></span></span><span class="chev">›</span></button>
+      <button class="act end" id="actEnd"><span class="ic"><svg viewBox="0 0 24 24"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg></span><span><b>Fin de día</b><span class="s" id="actEndS"></span></span><span class="chev">›</span></button>
+    </section>
+
+    <section class="card" id="today" hidden></section>
   </div>
 
-  <!-- Registros del mes -->
+<!-- Registros del mes -->
   <section id="tab-reg" role="tabpanel" style="display:grid;gap:14px" hidden>
     <div class="row2"><h2>Registros del mes</h2><span class="hint" id="capacity"></span></div>
     <div class="pump">
@@ -388,7 +356,7 @@ details .card{border:0;padding:0;background:transparent}
       <label>Usuario (No. de empleado _ Nombre completo)<input id="vUser"></label>
       <label>TAG / No. de tarjeta<input id="vTag"></label>
       <div class="actions"><button class="primary" id="btnSaveSettings">Guardar ajustes</button></div>
-      <p class="hint" style="text-align:center">Bitácora Flotilla 2.2</p>
+      <p class="hint" style="text-align:center">Bitácora Flotilla 2.3</p>
     </div>
   </section>
 </div>
