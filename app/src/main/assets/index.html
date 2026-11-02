@@ -203,6 +203,7 @@ details .card{border:0;padding:0;background:transparent}
 .tabs button[aria-selected="true"]{color:var(--fuel);background:var(--fuel-soft)}
 
 .stack{display:grid;gap:14px}
+.unreg .mapcard,.unreg #acts,.unreg #actHint,.unreg #today,.unreg #homeHint,.unreg .tabs{display:none!important}
 /* ---- mini mapa del recorrido ---- */
 .mapcard{background:linear-gradient(180deg,#141d25,#0e1419);border:1px solid var(--line);border-radius:22px;padding:10px;display:grid;gap:10px}
 .mapwrap{position:relative;isolation:isolate;z-index:0;height:210px;border-radius:14px;overflow:hidden;border:1px solid #1f2a33;transition:height .25s}
@@ -285,6 +286,21 @@ html,body{overflow-x:hidden}
       <div class="actions"><button class="primary" id="cfgSave">Probar y guardar</button></div>
     </section>
 
+    <section class="card" id="register" hidden>
+      <h2>Crea tu bitácora</h2>
+      <p class="hint">Cada persona tiene su propia hoja de la bitácora. Con estos datos se crea la tuya y se comparte a tu correo para que la veas en Google Sheets. Solo se hace una vez.</p>
+      <label>Nombre completo<input id="rNombre" autocomplete="name" placeholder="Nombre y apellidos"></label>
+      <div class="grid">
+        <label>No. de empleado<input id="rEmp" class="num" inputmode="numeric" placeholder="65071932"></label>
+        <label>Placas del vehículo<input id="rPlacas" autocapitalize="characters" placeholder="LGG190A"></label>
+      </div>
+      <label>Correo (Gmail) para compartirte la hoja<input id="rCorreo" type="email" autocomplete="email" placeholder="tucorreo@gmail.com"></label>
+      <label>TAG / No. de tarjeta (opcional)<input id="rTag"></label>
+      <div class="err" id="rErr" hidden></div>
+      <button class="go big" id="rGo">Crear mi bitácora</button>
+      <p class="hint">Si ya te habías registrado (por ejemplo, en otro teléfono), usa el mismo No. de empleado y correo y se recupera tu misma bitácora.</p>
+    </section>
+
     <div class="note fuel" id="homeHint" hidden>
       <div>Guarda tu <b>domicilio particular</b>: de ahí sale el primer tramo y ahí se cierra el día.</div>
       <div class="actions"><button class="primary small" id="btnHomeHere">Estoy en mi domicilio: guardar ubicación</button></div>
@@ -342,6 +358,11 @@ html,body{overflow-x:hidden}
     <div class="card">
       <h2>Ajustes</h2>
 
+      <h3>Mi bitácora</h3>
+      <div class="homebox"><svg viewBox="0 0 24 24" style="stroke:var(--fuel)"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><div><b id="meName">—</b><div class="hint" id="meInfo"></div></div></div>
+      <div class="actions"><button class="primary small" id="btnMySheet">Abrir mi hoja en Google Sheets</button></div>
+      <button class="linkbtn" id="btnLogout" style="color:var(--bad)">Cambiar de usuario en este teléfono</button>
+
       <h3>Domicilio particular</h3>
       <div class="homebox none" id="homeState"><svg viewBox="0 0 24 24"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg><div><b id="homeTitle">Sin definir</b><div class="hint" id="homeText">Cada día el primer tramo sale del domicilio y el último llega a él.</div></div></div>
       <div class="actions"><button class="primary small" id="btnHome">Usar mi ubicación actual</button><button class="ghost small" id="btnHomeEdit">Escribir coordenadas</button></div>
@@ -383,7 +404,7 @@ html,body{overflow-x:hidden}
       <label>Usuario (No. de empleado _ Nombre completo)<input id="vUser"></label>
       <label>TAG / No. de tarjeta<input id="vTag"></label>
       <div class="actions"><button class="primary" id="btnSaveSettings">Guardar ajustes</button></div>
-      <p class="hint" style="text-align:center">Bitácora Flotilla 2.6</p>
+      <p class="hint" style="text-align:center">Bitácora Flotilla 3.0</p>
     </div>
   </section>
 </div>

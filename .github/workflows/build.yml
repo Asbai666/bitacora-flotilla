@@ -28,8 +28,8 @@ jobs:
       - name: Publicar descarga
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.6.${{ github.run_number }}
-          name: Bitácora Flotilla 2.6.${{ github.run_number }}
-          body: "v2.6 · el mapa ya no queda encima de las ventanas, botones en una fila con la lista del recorrido debajo y exportación de la hoja a XLSX para WhatsApp (requiere actualizar Code.gs)."
+          tag_name: v3.0.${{ github.run_number }}
+          name: Bitácora Flotilla 3.0.${{ github.run_number }}
+          body: "v3.0 · cada persona que instala la app se registra (nombre, No. de empleado, correo y placas) y obtiene su propia bitácora en Google Sheets, compartida a su correo. Requiere actualizar Code.gs (versión 5)."
           files: BitacoraFlotilla.apk
           make_latest: true

@@ -25,8 +25,21 @@ class Prefs(ctx: Context) {
     var token: String
         get() = p.getString("token", DEFAULT_TOKEN) ?: DEFAULT_TOKEN
         set(v) = p.edit().putString("token", v.trim()).apply()
+    // ---- usuario registrado (cada quien tiene su propia bitácora) ----
+    var userKey: String
+        get() = p.getString("userKey", "") ?: ""
+        set(v) = p.edit().putString("userKey", v.trim()).apply()
+    var sheetUrl: String
+        get() = p.getString("sheetUrl", "") ?: ""
+        set(v) = p.edit().putString("sheetUrl", v.trim()).apply()
+    var employee: String
+        get() = p.getString("employee", "") ?: ""
+        set(v) = p.edit().putString("employee", v.trim()).apply()
+    var email: String
+        get() = p.getString("email", "") ?: ""
+        set(v) = p.edit().putString("email", v.trim()).apply()
     var name: String
-        get() = p.getString("name", "Asbai Jimenez") ?: "Asbai Jimenez"
+        get() = p.getString("name", "") ?: ""
         set(v) = p.edit().putString("name", v.trim()).apply()
     var plates: String
         get() = p.getString("plates", "") ?: ""
@@ -118,6 +131,7 @@ class Prefs(ctx: Context) {
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("scriptUrl", scriptUrl); put("token", token); put("name", name); put("plates", plates)
+        put("registered", userKey.isNotEmpty()); put("sheetUrl", sheetUrl); put("employee", employee); put("email", email)
         put("startAt", startAt); put("endAt", endAt); put("workDays", workDays); put("stopMinutes", stopMinutes)
         put("stopRadius", stopRadius); put("autoStart", autoStart); put("armed", armed)
         put("home", if (hasHome) JSONObject().put("lat", homeLat).put("lon", homeLon).put("address", homeAddr) else JSONObject.NULL)
@@ -132,6 +146,10 @@ class Prefs(ctx: Context) {
     fun applyConfig(o: JSONObject) {
         if (o.has("scriptUrl")) scriptUrl = o.getString("scriptUrl")
         if (o.has("token")) token = o.getString("token")
+        if (o.has("userKey")) userKey = o.getString("userKey")
+        if (o.has("sheetUrl")) sheetUrl = o.getString("sheetUrl")
+        if (o.has("employee")) employee = o.getString("employee")
+        if (o.has("email")) email = o.getString("email")
         if (o.has("name")) name = o.getString("name")
         if (o.has("plates")) plates = o.getString("plates")
         if (o.has("startAt")) startAt = o.getInt("startAt")

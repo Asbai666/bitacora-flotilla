@@ -27,3 +27,19 @@ Si después cambias el código: **Implementar → Administrar implementaciones �
 2. Arriba, en la lista de funciones elige **autorizar** y toca **▶ Ejecutar**. Google pide un permiso nuevo
    ("conectarse a un servicio externo", que se usa para generar el archivo de Excel): **Revisar permisos → tu cuenta → Configuración avanzada → Ir a … → Permitir**.
 3. **Implementar → Administrar implementaciones → lápiz → Versión: Nueva versión → Implementar.** La URL /exec no cambia.
+
+## Versión 5 (app 3.0: cada técnico con su propia bitácora)
+
+Una sola vez, en la hoja del coordinador:
+
+1. **Extensiones → Apps Script**, reemplaza `Código.gs` con el nuevo `Code.gs` y guarda.
+2. Elige la función **autorizar** y toca **▶ Ejecutar**. Acepta los permisos. Esto también crea:
+   - "Bitácora Flotilla – PLANTILLA (no editar)": copia limpia de la bitácora (sin datos ni fotos) que se usa para cada técnico.
+   - "Bitácora Flotilla – Usuarios": lista de los técnicos registrados con el enlace a su bitácora y su última actividad.
+3. **Implementar → Administrar implementaciones → lápiz → Versión: Nueva versión → Implementar.** La URL /exec no cambia.
+
+Después, cada técnico instala la app y llena "Crea tu bitácora" (nombre, No. de empleado, correo, placas).
+Su hoja queda en "Bitácora Flotilla - Evidencias / Bitácoras por usuario / <No. empleado> <Nombre>" junto con sus fotos y recorridos,
+y se le comparte a su correo. El coordinador (No. de empleado 65071932) sigue usando su bitácora original.
+
+Para cambiar el formato de todas las bitácoras nuevas, edita la PLANTILLA (las que ya existen no cambian).

@@ -1,15 +1,20 @@
 /**
- * Bitácora Flotilla — servicio para la app Android.
- * Se pega en: Hoja "Bitácora Flotilla" → Extensiones → Apps Script.
+ * Bitácora Flotilla — servicio para la app Android (multiusuario).
+ * Se pega en: Hoja "Bitácora Flotilla" del coordinador → Extensiones → Apps Script.
  * Implementar → Nueva implementación → Aplicación web
  *   Ejecutar como: Yo   ·   Quién tiene acceso: Cualquier usuario
- * Copia la URL que termina en /exec y pégala en la app (Ajustes).
+ *
+ * Cada técnico se registra desde la app (nombre, No. de empleado, correo, placas): el servicio le crea
+ * su propia bitácora copiando una plantilla limpia, en la carpeta "Bitácoras por usuario" del Drive del
+ * coordinador, y se la comparte a su correo. Cada petición trae la clave del usuario y solo toca su hoja.
+ * La hoja "Bitácora Flotilla – Usuarios" (misma carpeta raíz) lista a todos con sus enlaces.
  */
 
 const CONFIG = {
   TOKEN: 'hjS36zxuCyNVX7H2pNeZKx2Z',                       // mismo valor que en la app
   SHEET_ID: '11VXRMhswSoNfCqnZiAGv_KgrWUqGpeRfmNSDLqEk4v0',
   FOLDER_ID: '1mgISCQa_doMf-vZWSCGjhrqIhX0m-qvx',          // "Bitácora Flotilla - Evidencias"
+  OWNER: '65071932',         // No. de empleado del coordinador: al registrarse usa la bitácora original (SHEET_ID)
   TAB: 'Bitácora',
   EVIDENCE_TABS: ['1a Evidencia', '2a Evidencia', '3a Evidencia'],
   FIRST_ROW: 9,              // primera fila de captura; la última se calcula (fila anterior a TOTAL)
@@ -34,8 +39,11 @@ function doPost(e) {
     const req = JSON.parse(e.postData.contents || '{}');
     if (req.token !== CONFIG.TOKEN) return json_({ ok: false, error: 'Clave de acceso incorrecta' });
     lock.waitLock(30000);
+    if (req.action === 'register') return json_(register_(req));
+    CTX = req.key ? user_(req.key) : null;      // sin clave: apps anteriores del coordinador → bitácora original
+    if (CTX && ['save', 'carga', 'rest'].indexOf(req.action) >= 0) touch_();
     switch (req.action) {
-      case 'ping':   fixTotals_(sh_()); return json_({ ok: true, version: 4 });
+      case 'ping':   fixTotals_(sh_()); return json_({ ok: true, version: 5, user: CTX ? { nombre: CTX.nombre, empleado: CTX.emp, sheetUrl: sheetUrl_() } : null });
       case 'xlsx':   return json_(xlsx_());
       case 'carga':  return json_(carga_(req));
       case 'read':   return json_(read_());
@@ -53,11 +61,23 @@ function doPost(e) {
   }
 }
 
+// ---------- usuario de la petición ----------
+let CTX = null, SS = null;
+const PROPS = PropertiesService.getScriptProperties();
+function sheetId_() { return CTX ? CTX.sheet : CONFIG.SHEET_ID; }
+function sheetUrl_() { return 'https://docs.google.com/spreadsheets/d/' + sheetId_() + '/edit'; }
+function rootFolder_() { return DriveApp.getFolderById(CTX ? CTX.folder : CONFIG.FOLDER_ID); }
+function user_(key) {
+  const s = PROPS.getProperty('k:' + key);
+  if (!s) throw new Error('USUARIO_NO_REGISTRADO: tu registro ya no existe; vuelve a registrarte en la app.');
+  return JSON.parse(s);
+}
+
 // ---------- utilidades ----------
 function json_(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
 }
-function ss_() { return SpreadsheetApp.openById(CONFIG.SHEET_ID); }
+function ss_() { if (!SS) SS = SpreadsheetApp.openById(sheetId_()); return SS; }
 function sh_() { return ss_().getSheetByName(CONFIG.TAB); }
 function blank_(v) { return v === '' || v === null || v === undefined; }
 function num_(v) {
@@ -249,7 +269,7 @@ function placeImage_(sheet, box, b64, name) {
 }
 
 function monthFolder_(iso) {
-  const root = DriveApp.getFolderById(CONFIG.FOLDER_ID);
+  const root = rootFolder_();
   const name = (iso || Utilities.formatDate(new Date(), 'America/Mexico_City', 'yyyy-MM-dd')).slice(0, 7);
   const it = root.getFoldersByName(name);
   return it.hasNext() ? it.next() : root.createFolder(name);
@@ -338,7 +358,7 @@ function dateTime_(iso, hora) {
 // Exporta todo el libro (Bitácora y pestañas de Evidencia con sus fotos) tal como está en Google Sheets.
 function xlsx_() {
   SpreadsheetApp.flush();
-  const url = 'https://docs.google.com/spreadsheets/d/' + CONFIG.SHEET_ID + '/export?format=xlsx';
+  const url = 'https://docs.google.com/spreadsheets/d/' + sheetId_() + '/export?format=xlsx';
   const res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
   if (res.getResponseCode() !== 200) throw new Error('Google no generó el archivo XLSX (código ' + res.getResponseCode() + ')');
   const sh = sh_();
@@ -349,10 +369,122 @@ function xlsx_() {
   return { ok: true, name: name, size: bytes.length, b64: Utilities.base64Encode(bytes) };
 }
 
-// Ejecuta esta función una vez desde el editor (botón ▶ Ejecutar) para dar el permiso de exportar.
+// Ejecuta esta función una vez desde el editor (botón ▶ Ejecutar) para dar los permisos
+// (exportar a Excel y crear/compartir las bitácoras de los usuarios). También deja lista la plantilla.
 function autorizar() {
   const r = xlsx_();
-  Logger.log('Listo: ' + r.name + ' (' + Math.round(r.size / 1024) + ' KB)');
+  const t = template_();
+  registry_();
+  Logger.log('Listo: ' + r.name + ' (' + Math.round(r.size / 1024) + ' KB) · plantilla ' + t);
+}
+
+// ---------- usuarios ----------
+const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+function mesActual_() { return MESES[Number(Utilities.formatDate(new Date(), 'America/Mexico_City', 'M')) - 1]; }
+
+function register_(req) {
+  const emp = String(req.empleado || '').replace(/\D/g, '');
+  const nombre = String(req.nombre || '').replace(/\s+/g, ' ').trim();
+  const correo = String(req.correo || '').trim().toLowerCase();
+  if (!emp || nombre.length < 5) throw new Error('Escribe tu nombre completo y tu número de empleado.');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) throw new Error('Escribe un correo válido (de preferencia Gmail) para compartirte tu hoja.');
+
+  // ya registrado (reinstaló la app o cambió de teléfono): se le devuelve su misma bitácora
+  const prev = PROPS.getProperty('e:' + emp);
+  if (prev && PROPS.getProperty('k:' + prev)) {
+    const u = JSON.parse(PROPS.getProperty('k:' + prev));
+    if (u.correo && u.correo !== correo) throw new Error('El empleado ' + emp + ' ya está registrado con otro correo. Pide al coordinador que lo revise.');
+    CTX = u;
+    return { ok: true, key: prev, nuevo: false, nombre: u.nombre, sheetUrl: sheetUrl_() };
+  }
+
+  let sheetId, folderId, shared = true;
+  if (emp === CONFIG.OWNER) { sheetId = CONFIG.SHEET_ID; folderId = CONFIG.FOLDER_ID; }
+  else {
+    const folder = usersFolder_().createFolder(emp + ' ' + nombre);
+    const file = DriveApp.getFileById(template_()).makeCopy('Bitácora Flotilla TPLAY_' + emp + ' ' + nombre, folder);
+    sheetId = file.getId(); folderId = folder.getId();
+    const sh = SpreadsheetApp.openById(sheetId).getSheetByName(CONFIG.TAB);
+    sh.getRange('B5').setValue(req.mes || mesActual_());
+    sh.getRange('G5').setValue(emp + ' ' + nombre);
+    sh.getRange('L5').setValue(String(req.placas || '').toUpperCase());
+    sh.getRange('O5').setValue(req.tag || '');
+    try { file.addEditor(correo); folder.addViewer(correo); } catch (e) { shared = false; }
+  }
+  const reg = registry_().getSheets()[0];
+  reg.appendRow([new Date(), emp, nombre, correo, String(req.placas || '').toUpperCase(), req.tag || '', '', '', new Date()]);
+  const row = reg.getLastRow();
+  reg.getRange(row, 7).setFormula('=HYPERLINK("https://docs.google.com/spreadsheets/d/' + sheetId + '/edit","Abrir bitácora")');
+  reg.getRange(row, 8).setFormula('=HYPERLINK("https://drive.google.com/drive/folders/' + folderId + '","Fotos y recorridos")');
+  const key = Utilities.getUuid().replace(/-/g, '');
+  CTX = { emp: emp, nombre: nombre, correo: correo, sheet: sheetId, folder: folderId, row: row };
+  PROPS.setProperty('k:' + key, JSON.stringify(CTX));
+  PROPS.setProperty('e:' + emp, key);
+  return { ok: true, key: key, nuevo: true, shared: shared, nombre: nombre, sheetUrl: sheetUrl_() };
+}
+
+// Última actividad en la hoja de usuarios (como mucho una vez cada 10 minutos por usuario)
+function touch_() {
+  try {
+    const c = CacheService.getScriptCache(), k = 't:' + CTX.emp;
+    if (c.get(k) || !CTX.row) return;
+    registry_().getSheets()[0].getRange(CTX.row, 9).setValue(new Date());
+    c.put(k, '1', 600);
+  } catch (e) {}
+}
+
+function usersFolder_() {
+  const root = DriveApp.getFolderById(CONFIG.FOLDER_ID);
+  const it = root.getFoldersByName('Bitácoras por usuario');
+  return it.hasNext() ? it.next() : root.createFolder('Bitácoras por usuario');
+}
+
+// Hoja índice para el coordinador: quién está registrado y el enlace a su bitácora
+function registry_() {
+  const id = PROPS.getProperty('registry');
+  if (id) try { const f = DriveApp.getFileById(id); if (!f.isTrashed()) return SpreadsheetApp.openById(id); } catch (e) {}
+  const ss = SpreadsheetApp.create('Bitácora Flotilla – Usuarios');
+  const sh = ss.getSheets()[0].setName('Usuarios');
+  sh.getRange(1, 1, 1, 9).setValues([['Alta', 'No. empleado', 'Nombre', 'Correo', 'Placas', 'TAG / Tarjeta', 'Bitácora', 'Carpeta', 'Última actividad']])
+    .setFontWeight('bold').setBackground('#11181d').setFontColor('#ffffff');
+  sh.setFrozenRows(1);
+  sh.getRange('A:A').setNumberFormat('dd/mm/yyyy hh:mm'); sh.getRange('I:I').setNumberFormat('dd/mm/yyyy hh:mm');
+  DriveApp.getFileById(ss.getId()).moveTo(DriveApp.getFolderById(CONFIG.FOLDER_ID));
+  PROPS.setProperty('registry', ss.getId());
+  return ss;
+}
+
+// Plantilla limpia: copia de las pestañas de la bitácora del coordinador sin sus datos ni fotos (y sin este código)
+function template_() {
+  const id = PROPS.getProperty('template');
+  if (id) try { if (!DriveApp.getFileById(id).isTrashed()) return id; } catch (e) {}
+  const src = SpreadsheetApp.openById(CONFIG.SHEET_ID);
+  const t = SpreadsheetApp.create('Bitácora Flotilla – PLANTILLA (no editar)');
+  const blank = t.getSheets()[0];
+  src.getSheets().forEach(s => {
+    const n = s.getName();
+    if (/Evidencia/i.test(n) && CONFIG.EVIDENCE_TABS.indexOf(n) < 0) return;   // 4a, 5a… no van en la plantilla
+    s.copyTo(t).setName(n);
+  });
+  t.deleteSheet(blank);
+  t.setSpreadsheetTimeZone(src.getSpreadsheetTimeZone());
+  t.setSpreadsheetLocale('es_MX');
+  const b = t.getSheetByName(CONFIG.TAB);
+  let tot = totalsRow_(b);
+  if (tot - CONFIG.FIRST_ROW > 28) { b.deleteRows(CONFIG.FIRST_ROW + 28, tot - CONFIG.FIRST_ROW - 28); tot = totalsRow_(b); }
+  b.getRange(CONFIG.FIRST_ROW, 1, tot - CONFIG.FIRST_ROW, 15).clearContent();
+  ['B5', 'G5', 'L5', 'O5'].forEach(a => b.getRange(a).clearContent());
+  fixTotals_(b);
+  CONFIG.EVIDENCE_TABS.forEach(n => {
+    const ev = t.getSheetByName(n); if (!ev) return;
+    ev.getImages().forEach(i => i.remove());
+    ['I4', 'J4', 'I5'].forEach(a => ev.getRange(a).clearContent());
+    const cr = commentsRow_(ev); if (cr) ev.getRange(cr, 2).clearContent();
+  });
+  t.setActiveSheet(b); t.moveActiveSheet(1);
+  DriveApp.getFileById(t.getId()).moveTo(DriveApp.getFolderById(CONFIG.FOLDER_ID));
+  PROPS.setProperty('template', t.getId());
+  return t.getId();
 }
 
 // ---------- día de descanso ----------
@@ -385,7 +517,7 @@ function header_(req) {
 
 // ---------- recorrido GPS (KML + paradas) ----------
 function track_(req) {
-  const root = DriveApp.getFolderById(CONFIG.FOLDER_ID);
+  const root = rootFolder_();
   const it = root.getFoldersByName('Recorridos');
   const folder = it.hasNext() ? it.next() : root.createFolder('Recorridos');
   const out = {};

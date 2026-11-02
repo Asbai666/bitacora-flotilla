@@ -29,6 +29,7 @@ const call = async (action, payload) => {
   if (action === "save" && payload.entry && !payload.keepCarga) payload.entry = stripCarga(payload.entry);
   delete payload.keepCarga;
   const r = await nat("call", action, JSON.stringify(payload));
+  if (!r.ok && /^USUARIO_NO_REGISTRADO/.test(r.error || "")) { A.setConfig(JSON.stringify({ userKey: "" })); cfg = JSON.parse(A.config()); r.error = r.error.replace(/^USUARIO_NO_REGISTRADO:\s*/, ""); setTimeout(render, 0); }
   if (!r.ok && /Acci[oó]n desconocida/.test(r.error || "")) r.error = "El servicio de Google es de una versión anterior. Actualízalo (Extensiones → Apps Script → pega el nuevo Code.gs → Implementar → Nueva versión).";
   return r;
 };
@@ -713,7 +714,7 @@ async function saveManualStop(existing, km, a, aC, asunto) {
 // y se pide el asunto; la foto del odómetro es opcional para corregir el km.
 let registering = false;
 async function autoRegisterPending(silent) {
-  if (day.stage !== "running" || registering || !cfg.scriptUrl) return;
+  if (day.stage !== "running" || registering || !cfg.scriptUrl || !cfg.registered) return;
   if (!silent && flow && flow !== "carga") return;
   const pend = pendingStops(); if (!pend.length) return;
   if (num(day.entry.kmIni) === null) { if (!silent && $("modal").hidden) openStart("confirm"); return; }
@@ -1125,7 +1126,7 @@ $("btnCargaReg").onclick = () => { if (!cfg.scriptUrl) { banner("bad", "Primero 
 
 // ---------- hoja ----------
 async function loadSheet() {
-  if (!cfg.scriptUrl) return;
+  if (!cfg.scriptUrl || !cfg.registered) return;
   const r = await call("read");
   if (!r.ok) { banner("bad", "No se pudo leer la hoja", r.error, [{ label: "Reintentar", cls: "primary", run: loadSheet }], "readfail"); return; }
   sheet = r; sheet.loaded = true;
@@ -1326,8 +1327,41 @@ $("cfgSave").onclick = async () => {
   $("sUrl").value = cfg.scriptUrl; renderConn(); render(); showTab("hoy"); loadSheet(); nat("permissions").then(x => { cfg.perms = x; renderPerms(); });
 };
 
+// ---------- registro: cada usuario con su propia bitácora ----------
+$("rGo").onclick = async () => {
+  const v = id => $(id).value.trim();
+  const err = $("rErr"); err.hidden = true;
+  const miss = [];
+  if (v("rNombre").split(/\s+/).length < 2) miss.push(["rNombre", "tu nombre completo"]);
+  if (!/^\d{3,}$/.test(v("rEmp"))) miss.push(["rEmp", "tu número de empleado"]);
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v("rCorreo"))) miss.push(["rCorreo", "un correo válido"]);
+  if (!v("rPlacas")) miss.push(["rPlacas", "las placas"]);
+  miss.forEach(([id]) => $(id).classList.add("bad"));
+  if (miss.length) { err.textContent = "Falta " + miss.map(m => m[1]).join(", ") + "."; err.hidden = false; return; }
+  const b = $("rGo"); b.disabled = true; b.textContent = "Creando tu bitácora…";
+  const r = await call("register", { nombre: v("rNombre"), empleado: v("rEmp"), correo: v("rCorreo").toLowerCase(), placas: v("rPlacas").toUpperCase(), tag: v("rTag"), mes: MESES[new Date().getMonth()].replace(/^./, c => c.toUpperCase()) });
+  b.disabled = false; b.textContent = "Crear mi bitácora";
+  if (!r.ok) { err.textContent = r.error || "No se pudo crear la bitácora."; err.hidden = false; return; }
+  A.setConfig(JSON.stringify({ userKey: r.key, sheetUrl: r.sheetUrl || "", name: r.nombre || v("rNombre"), employee: v("rEmp"), email: v("rCorreo").toLowerCase(), plates: v("rPlacas").toUpperCase() }));
+  cfg = JSON.parse(A.config());
+  renderSettings(); render(); loadSheet();
+  nat("permissions").then(x => { cfg.perms = x; renderPerms(); });
+  banner("ok", r.nuevo ? "Tu bitácora está lista" : "Recuperaste tu bitácora", (r.nuevo ? (r.shared === false ? "Se creó tu hoja, pero no se pudo compartir a tu correo; pídeselo al coordinador." : "Se compartió a " + v("rCorreo").toLowerCase() + ": la verás en Google Sheets.") : "Se volvió a vincular tu misma hoja.") + (home() ? "" : " Ahora guarda la ubicación de tu domicilio."), null, "reg");
+};
+["rNombre", "rEmp", "rCorreo", "rPlacas"].forEach(id => $(id).addEventListener("input", () => { $(id).classList.remove("bad"); $("rErr").hidden = true; }));
+$("btnMySheet").onclick = () => { if (cfg.sheetUrl) A.openUrl(cfg.sheetUrl); };
+$("btnLogout").onclick = () => {
+  const b = $("btnLogout");
+  if (!b.dataset.armed) { b.dataset.armed = "1"; b.textContent = "Toca otra vez: se desvincula este teléfono (la hoja no se borra)"; return; }
+  A.disarm(); if (day.stage === "running") A.stopTracking();
+  A.setConfig(JSON.stringify({ userKey: "", sheetUrl: "", employee: "", email: "" }));
+  ["bitacora-dia-v1", "bitacora-carga", "bitacora-gps-filas", "bitacora-salida-atendida"].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+  location.reload();
+};
+
 // ---------- recordatorios dentro de la app ----------
 function checkReminders() {
+  if (!cfg.registered) return;
   const now = new Date(), mins = now.getHours() * 60 + now.getMinutes();
   if (pastDay()) { if (!flow) openFinish(); return; }   // un día anterior quedó abierto: se cierra primero
   const work = !!((cfg.workDays >> now.getDay()) & 1);
@@ -1339,6 +1373,13 @@ function checkReminders() {
 // ---------- pintar ----------
 function render() {
   $("setup").hidden = !!cfg.scriptUrl;
+  const reg = !!cfg.registered;
+  document.body.classList.toggle("unreg", !!cfg.scriptUrl && !reg);
+  $("register").hidden = !cfg.scriptUrl || reg;
+  if (!reg && cfg.scriptUrl) { if (!$("rNombre").value && cfg.name) $("rNombre").value = cfg.name; if (!$("rPlacas").value && cfg.plates) $("rPlacas").value = cfg.plates; if (!$("rCorreo").value && cfg.email) $("rCorreo").value = cfg.email; if (!$("rEmp").value && cfg.employee) $("rEmp").value = cfg.employee; showTab("hoy"); }
+  $("meName").textContent = cfg.name || "—";
+  $("meInfo").textContent = [cfg.employee ? "No. " + cfg.employee : "", cfg.email].filter(Boolean).join(" · ") || "Sin registrar";
+  $("btnMySheet").disabled = !cfg.sheetUrl;
   if (day.stage === "idle" && home() && !has(day.entry.de)) { day.entry.de = homeLabel(); day.entry.deC = homeCoords(); }
   const armed = day.stage === "idle" && cfg.armed;
   const P = armed ? ["armed", "Esperando salida"] : { idle: ["idle", "Sin iniciar"], running: ["run", "Grabando"], closed: ["closed", "Día cerrado"], rest: ["rest", "Descanso"] }[day.stage];
@@ -1375,7 +1416,7 @@ persist();
 render();
 renderConn();
 showTab(load("bitacora-tab", "hoy") || "hoy");
-if (cfg.scriptUrl) { setTimeout(() => autoRegisterPending(), 1500); loadSheet().then(checkDeparture); nat("permissions").then(x => { cfg.perms = x; renderPerms(); }); }
+if (cfg.scriptUrl && cfg.registered) { setTimeout(() => autoRegisterPending(), 1500); loadSheet().then(checkDeparture); nat("permissions").then(x => { cfg.perms = x; renderPerms(); }); }
 setTimeout(checkReminders, 800);
 setInterval(renderToday, 30000);
 })();

@@ -128,7 +128,7 @@ class MainActivity : AppCompatActivity() {
         if (!fresh) try {
             val c = (java.net.URL(u.toString()).openConnection() as java.net.HttpURLConnection).apply {
                 connectTimeout = 10_000; readTimeout = 15_000
-                setRequestProperty("User-Agent", "BitacoraFlotilla/2.6 (Android; mx.ajm.bitacora)")
+                setRequestProperty("User-Agent", "BitacoraFlotilla/3.0 (Android; mx.ajm.bitacora)")
                 setRequestProperty("Referer", "https://github.com/Asbai666/bitacora-flotilla")
             }
             if (c.responseCode == 200) { val bytes = c.inputStream.use { it.readBytes() }; f.writeBytes(bytes) }
@@ -500,6 +500,10 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface fun exactAlarms() = runOnUiThread {
             if (Build.VERSION.SDK_INT >= 31) try { startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$packageName"))) } catch (e: Exception) { }
+        }
+
+        @JavascriptInterface fun openUrl(u: String) = runOnUiThread {
+            try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u))) } catch (e: Exception) { }
         }
 
         @JavascriptInterface fun appSettings() = runOnUiThread {

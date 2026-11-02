@@ -12,6 +12,7 @@ class Backend(private val prefs: Prefs) {
         val url = prefs.scriptUrl
         if (!url.startsWith("https://script.google.com/")) throw IOException("Falta la dirección del servicio de Google en Ajustes")
         payload.put("action", action).put("token", prefs.token)
+        if (prefs.userKey.isNotEmpty() && action != "register") payload.put("key", prefs.userKey)
         val body = payload.toString().toByteArray(Charsets.UTF_8)
 
         val c = (URL(url).openConnection() as HttpURLConnection).apply {
