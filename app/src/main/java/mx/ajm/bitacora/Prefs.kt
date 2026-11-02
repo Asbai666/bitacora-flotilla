@@ -16,7 +16,8 @@ class Prefs(ctx: Context) {
         // v2.0: una parada es quedarse 7 min dentro de 150 m
         if (p.getInt("schema", 1) < 4) p.edit().putInt("stopMinutes", 7).putInt("stopRadius", 150).putInt("schema", 4).apply()
         // v2.2: el servicio de Google de la hoja queda configurado de fábrica
-        if (p.getInt("schema", 1) < 5) p.edit().putString("scriptUrl", DEFAULT_URL).putInt("schema", 5).apply()
+        // v3.1: nueva implementación del servicio de Google (multiusuario)
+        if (p.getInt("schema", 1) < 6) p.edit().putString("scriptUrl", DEFAULT_URL).putInt("schema", 6).apply()
     }
 
     var scriptUrl: String
@@ -168,7 +169,7 @@ class Prefs(ctx: Context) {
 
     companion object {
         const val DEFAULT_TOKEN = "hjS36zxuCyNVX7H2pNeZKx2Z"
-        const val DEFAULT_URL = "https://script.google.com/macros/s/AKfycbyMegwLhsGlU4bgl_WyYTMQvWdYtAfS5KJ9z4-9lUXn5YfBBiIZfJaWBHIVXKR9DeSP/exec"
+        const val DEFAULT_URL = "https://script.google.com/macros/s/AKfycbxZzq9_mmrNfJPVXvftwUBI5pZiY5urTz3iA0por5rxqgxOcUdx_BUfIGh2a9rBiIDn/exec"
         fun today(): String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
         fun today(t: Long): String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(t))
     }
