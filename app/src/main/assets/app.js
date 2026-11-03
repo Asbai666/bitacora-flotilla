@@ -173,43 +173,79 @@ function odoCands(lines, ref, regionBonus) {
 }
 function readOdometer(lines, ref) { const c = odoCands(lines, ref); return c.length ? c[0].v : null; }
 
+// Tickets de bomba y vouchers: cada etiqueta (IMPORTE, LITROS, FOLIO…) se empareja con el valor que está
+// en la misma línea, a su derecha (otra columna) o justo debajo; luego se comprueba importe = litros × precio.
+const MES3 = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC"];
+function money_(s) {
+  const t = String(s).toUpperCase().replace(/[OQ](?=\d)|(?<=\d)[OQ]/g, "0").replace(/(?<=\d)[Il]|[Il](?=\d)/g, "1").replace(/\$\s+/g, "$");
+  const m = t.match(/\$?\s*(\d{1,3}(?:[,\s]\d{3})+|\d+)\s*[.,]\s*(\d{2,3})(?!\d)/);
+  if (!m) return null;
+  const v = parseFloat(m[1].replace(/[,\s]/g, "") + "." + m[2]);
+  return isNaN(v) ? null : v;
+}
 function readTicketOne(lines) {
-  const L = lines.slice().sort((a, b) => (a.y - b.y) || (a.x - b.x)).map(l => l.text.toUpperCase());
+  const items = lines.map(l => ({ t: String(l.text || "").toUpperCase(), x: l.x || 0, y: l.y || 0, h: Math.max(8, l.h || 20), w: l.w || 300 }))
+    .sort((a, b) => (a.y - b.y) || (a.x - b.x));
+  const cy = it => it.y + it.h / 2;
+  // valor de una etiqueta: resto de su línea → misma altura a la derecha → la línea de abajo
+  const near = (res, fn, bad) => {
+    for (const re of res) for (const it of items) {
+      if (!re.test(it.t) || (bad && bad.test(it.t))) continue;
+      const rest = fn(it.t.replace(re, " "));
+      if (rest !== null && rest !== undefined) return rest;
+      const right = items.filter(o => o !== it && o.x > it.x && Math.abs(cy(o) - cy(it)) < Math.max(o.h, it.h) * .65).sort((a, b) => a.x - b.x);
+      for (const o of right) { const v = fn(o.t); if (v !== null && v !== undefined) return v; }
+      const below = items.filter(o => o.y > it.y + it.h * .4 && o.y < it.y + it.h * 2.6 && o.x < it.x + it.w * 1.6 && o.x + o.w > it.x - it.w * .6);
+      for (const o of below) { const v = fn(o.t); if (v !== null && v !== undefined) return v; }
+    }
+    return null;
+  };
   const out = {};
-  const numIn = s => { const m = String(s).replace(/O/g, "0").match(/\$?\s*(\d{1,3}(?:[,\s]\d{3})*|\d+)[.,](\d{2,3})\b/); return m ? parseFloat(m[1].replace(/[,\s]/g, "") + "." + m[2]) : null; };
-  const near = (res, fn) => { for (const re of res) for (let i = 0; i < L.length; i++) if (re.test(L[i])) { const v = fn(L[i].replace(re, " ")) ?? (L[i + 1] ? fn(L[i + 1]) : null); if (v !== null && v !== undefined) return v; } return null; };
-  out.importe = near([/TOTAL\s*(A\s*PAGAR)?/, /IMPORTE/, /MONTO/, /PAGAR|VENTA/], numIn);
-  out.litros = near([/LITROS/, /\bLTS?\b\.?/, /VOLUMEN|VOL\./, /CANTIDAD|CANT\./], numIn);
-  if (out.litros === null) { for (const s of L) { const m = s.match(/(\d+[.,]\d{1,3})\s*(L|LT|LTS|LITROS)\b/); if (m) { out.litros = parseFloat(m[1].replace(",", ".")); break; } } }
-  out.precio = near([/PRECIO|P\.?\s*UNIT|\$\s*\/\s*L/], numIn);
-  if (out.importe === null) { let best = null; L.forEach(s => { if (/\$/.test(s)) { const v = numIn(s); if (v !== null && (best === null || v > best)) best = v; } }); out.importe = best; }
-  // deriva el dato que falte con precio por litro
+  out.importe = near([/\bTOTAL\s*(A\s*PAGAR|M\.?N\.?)?\b/, /\bIMPORTE\b/, /\bMONTO\b/, /\bVENTA\b|\bPAGAR\b|\bCARGO\b/], money_, /SUB\s*TOTAL|\bIVA\b|IEPS|PRECIO/);
+  out.litros = near([/\bLITROS?\b/, /\bLTS?\.?\b/, /\bVOLUMEN\b|\bVOL\.?\b/, /\bCANTIDAD\b|\bCANT\.?\b/], s => { const v = money_(s); return v !== null && v > 0 && v < 400 ? v : null; });
+  if (out.litros === null) for (const it of items) { const m = it.t.match(/(\d{1,3}[.,]\d{2,3})\s*(L|LT|LTS|LITROS)\b/); if (m) { out.litros = parseFloat(m[1].replace(",", ".")); break; } }
+  out.precio = near([/\bPRECIO\b|P\.?\s*UNIT|\$\s*\/\s*L(T|TS)?\b|\bP\/L\b/], s => { const v = money_(s); return v !== null && v > 10 && v < 60 ? v : null; });
+  if (out.importe === null) { let best = null; items.forEach(it => { if (/\$/.test(it.t) && !/SUB\s*TOTAL|\bIVA\b|IEPS|PRECIO|\/\s*L/.test(it.t)) { const v = money_(it.t); if (v !== null && v < 20000 && (best === null || v > best)) best = v; } }); out.importe = best; }
+  if (out.litros === null) for (const it of items) { const m = it.t.match(/(?<![\d$.,])(\d{1,3}[.,]\d{3})(?![\d])/); if (m && !/\$/.test(it.t)) { const v = parseFloat(m[1].replace(",", ".")); if (v > 0 && v < 400) { out.litros = v; break; } } }
+  // coherencia: importe ≈ litros × precio (gana el dato que cuadra; se calcula el que falta)
+  const { importe: I, litros: Lt, precio: P } = out;
+  if (I && Lt && P && Math.abs(I - Lt * P) > Math.max(2, I * .03)) {
+    if (Math.abs(I / P - Lt) > Lt * .2) out.litros = Math.round(I / P * 1000) / 1000;
+  }
   if (out.litros === null && out.importe && out.precio) out.litros = Math.round(out.importe / out.precio * 1000) / 1000;
   if (out.importe === null && out.litros && out.precio) out.importe = Math.round(out.litros * out.precio * 100) / 100;
-  for (const s of L) {
+  // fecha y hora
+  const allT = items.map(i => i.t);
+  for (const s of allT) {
     let m = s.match(/(20\d\d)[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
     if (m) { out.fecha = m[1] + "-" + pad(m[2]) + "-" + pad(m[3]); break; }
-    m = s.match(/(?<!\d)(\d{1,2})[\/\-.](\d{1,2}|[A-Z]{3})[\/\-.](\d{2,4})(?!\d)/);
+    m = s.match(/(?<!\d)(\d{1,2})\s*[\/\-.]\s*(\d{1,2}|[A-Z]{3})\s*[\/\-.]\s*(\d{2,4})(?!\d)/);
     if (m) {
       let y = +m[3]; if (y < 100) y += 2000;
-      let mo = /^\d+$/.test(m[2]) ? +m[2] : ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC"].indexOf(m[2]) + 1;
-      const d = +m[1]; if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) { out.fecha = y + "-" + pad(mo) + "-" + pad(d); break; }
+      const mo = /^\d+$/.test(m[2]) ? +m[2] : MES3.indexOf(m[2]) + 1, d = +m[1];
+      if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31 && y >= 2020 && y <= 2099) { out.fecha = y + "-" + pad(mo) + "-" + pad(d); break; }
     }
   }
-  for (const s of L) {
-    const m = s.match(/(?<!\d)([01]?\d|2[0-3])[:.]([0-5]\d)(?::[0-5]\d)?\s*(A\.?\s?M\.?|P\.?\s?M\.?)?/);
-    if (m && !/\$|LITRO|TOTAL/.test(s)) { let h = +m[1]; const pm = m[3] && /P/.test(m[3]); if (pm && h < 12) h += 12; if (m[3] && !pm && h === 12) h = 0; out.hora = pad(h) + ":" + m[2]; break; }
+  for (const s of allT) {
+    const m = s.match(/(?<![\d.,$])([01]?\d|2[0-3])\s*:\s*([0-5]\d)(?:\s*:\s*[0-5]\d)?\s*(A\.?\s?M\.?|P\.?\s?M\.?)?(?![\d.,])/);
+    if (m && !/\$|LITRO|TOTAL|IMPORTE|PRECIO/.test(s)) { let h = +m[1]; const pm = m[3] && /P/.test(m[3]); if (pm && h < 12) h += 12; if (m[3] && !pm && h === 12) h = 0; out.hora = pad(h) + ":" + m[2]; break; }
   }
-  const code = s => { const m = s.match(/[#:\s.]*([A-Z0-9][A-Z0-9\-]{3,})/); return m && /\d/.test(m[1]) ? m[1] : null; };
-  out.folio = near([/FOLIO/, /NO\.?\s*(DE\s*)?TICKET|TICKET/, /TRANSACCI[OÓ]N|TRANS\.?|NO\.?\s*OPERACI[OÓ]N|OPERACI[OÓ]N/, /TKT|REF\.?|REFERENCIA/], code);
-  out.factura = near([/FACTURA/], code);
+  // folio / número de ticket o transacción (al menos 4 dígitos)
+  const code = s => { const m = String(s).replace(/[:#.]/g, " ").match(/\b([A-Z]{0,3}-?\d[\dA-Z\-]{3,})\b/); return m && (m[1].match(/\d/g) || []).length >= 4 ? m[1] : null; };
+  out.folio = near([/\bFOLIO\b/, /\bNO\.?\s*(DE\s*)?TICKET\b|\bTICKET\b|\bTKT\b/, /TRANSACCI[OÓ]N|\bTRANS\b|\bTRX\b/, /OPERACI[OÓ]N|\bOPER\b|\bNO\.?\s*OP\b/, /\bREF(ERENCIA)?\b|\bAUT(ORIZACI[OÓ]N)?\b|\bNO\.?\s*AUT\b/], code);
+  out.factura = near([/\bFACTURA\b/], code);
   return out;
 }
 function readTicket(lines) {
   const byV = {}; lines.forEach(l => (byV[l.v || 0] = byV[l.v || 0] || []).push(l));
   const res = Object.keys(byV).sort().map(v => readTicketOne(byV[v]));
   const out = {};
-  ["importe", "litros", "precio", "fecha", "hora", "folio", "factura"].forEach(k => { const r = res.find(x => x[k] !== null && x[k] !== undefined); out[k] = r ? r[k] : null; });
+  // por campo, el valor que más versiones de la foto coinciden en leer
+  ["importe", "litros", "precio", "fecha", "hora", "folio", "factura"].forEach(k => {
+    const votes = {}; res.forEach(r => { if (r[k] !== null && r[k] !== undefined) votes[r[k]] = (votes[r[k]] || 0) + 1; });
+    const best = Object.keys(votes).sort((a, b) => votes[b] - votes[a])[0];
+    out[k] = best === undefined ? null : (typeof res.find(r => String(r[k]) === best)[k] === "number" ? +best : best);
+  });
   return out;
 }
 
@@ -1048,6 +1084,8 @@ $("actEnd").onclick = () => openFinish();
 // ---------- carga de combustible ----------
 // Fotos: ticket de bomba, voucher de cobro, odómetro y una adicional. Del ticket se leen folio, fecha y hora,
 // importe y litros. Se guarda en la fila del traslado que corresponde y en la pestaña de Evidencia que le toca.
+// recuadros de la pestaña de Evidencia: voucher → TICKET CAR, ticket → TICKET BOMBA, odómetro → ODÓMETRO, adicional → RESPALDO
+const CARGA_SLOTS = [{ slot: "ticket", box: "ticketBomba" }, { slot: "ticketCar", box: "ticketCar" }, { slot: "odoCarga", box: "odometro" }, { slot: "extra", box: "respaldo" }];
 const CKEY = "bitacora-carga";
 const CF = ["c_folio", "c_fecha", "c_hora", "c_importe", "c_litros", "c_factura", "c_km"];
 function updatePump() {

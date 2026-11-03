@@ -64,9 +64,14 @@ class PhotoProcessor(private val ctx: Context) {
             if (current != null) { lat = current.first; lon = current.second; gpsSrc = "gps" }
         }
 
-        // imagen reducida y orientada
-        val bmp = decode(uri, 1600, orientation) ?: throw IllegalStateException("No se pudo abrir la imagen")
-        save(bmp, base(slot), 88)
+        // imagen orientada: los tickets se leen a más resolución (letra térmica pequeña); la que se sube queda a 1600 px
+        val ticket = slot == "ticket" || slot == "ticketCar"
+        val bmp = decode(uri, if (ticket) 2600 else 1600, orientation) ?: throw IllegalStateException("No se pudo abrir la imagen")
+        if (max(bmp.width, bmp.height) > 1600) {
+            val k = 1600f / max(bmp.width, bmp.height)
+            val small = Bitmap.createScaledBitmap(bmp, (bmp.width * k).roundToInt(), (bmp.height * k).roundToInt(), true)
+            save(small, base(slot), 88); small.recycle()
+        } else save(bmp, base(slot), 88)
         val m = Meta(lat, lon, time, timeSrc, gpsSrc)
         writeMeta(slot, m)
         val preview = watermark(slot, m, who, plates)
@@ -75,6 +80,7 @@ class PhotoProcessor(private val ctx: Context) {
         val lines = JSONArray()
         val odo = isOdometer(slot)
         val variants = mutableListOf(bmp, filtered(bmp, 1.9f, false))
+        if (ticket) variants += filtered(bmp, 2.8f, false)   // tickets térmicos deslavados
         if (odo) {
             variants += filtered(bmp, 1.9f, true)
             val c = Rect((bmp.width * 0.15f).toInt(), (bmp.height * 0.2f).toInt(), (bmp.width * 0.85f).toInt(), (bmp.height * 0.8f).toInt())

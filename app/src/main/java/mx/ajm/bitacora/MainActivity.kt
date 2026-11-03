@@ -128,7 +128,7 @@ class MainActivity : AppCompatActivity() {
         if (!fresh) try {
             val c = (java.net.URL(u.toString()).openConnection() as java.net.HttpURLConnection).apply {
                 connectTimeout = 10_000; readTimeout = 15_000
-                setRequestProperty("User-Agent", "BitacoraFlotilla/3.1 (Android; mx.ajm.bitacora)")
+                setRequestProperty("User-Agent", "BitacoraFlotilla/3.2 (Android; mx.ajm.bitacora)")
                 setRequestProperty("Referer", "https://github.com/Asbai666/bitacora-flotilla")
             }
             if (c.responseCode == 200) { val bytes = c.inputStream.use { it.readBytes() }; f.writeBytes(bytes) }
