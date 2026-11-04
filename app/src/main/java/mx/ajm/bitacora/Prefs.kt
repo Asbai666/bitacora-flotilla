@@ -18,6 +18,8 @@ class Prefs(ctx: Context) {
         // v2.2: el servicio de Google de la hoja queda configurado de fábrica
         // v3.1: nueva implementación del servicio de Google (multiusuario)
         if (p.getInt("schema", 1) < 6) p.edit().putString("scriptUrl", DEFAULT_URL).putInt("schema", 6).apply()
+        // v4.0: se quita la salida automática de casa (el día se inicia siempre con la foto del odómetro)
+        if (p.getInt("schema", 1) < 7) p.edit().putBoolean("autoStart", false).putBoolean("armed", false).putInt("schema", 7).apply()
     }
 
     var scriptUrl: String
@@ -113,6 +115,10 @@ class Prefs(ctx: Context) {
     var trackDate: String
         get() = p.getString("trackDate", "") ?: ""
         set(v) = p.edit().putString("trackDate", v).apply()
+
+    var watchAlertAt: Long
+        get() = p.getLong("watchAlertAt", 0L)
+        set(v) = p.edit().putLong("watchAlertAt", v).apply()
 
     var reminderCount: Int
         get() = p.getInt("reminderCount", 0)

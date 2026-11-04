@@ -79,6 +79,10 @@ object Alerts {
         set(ctx, A_END, nextAt(prefs.endAt))
     }
 
+    // ---------- vigilancia del GPS: cada 15 min revisa que sigan llegando puntos ----------
+    const val A_WATCH = "mx.ajm.bitacora.GPS_WATCH"
+    fun scheduleWatch(ctx: Context) = set(ctx, A_WATCH, System.currentTimeMillis() + 15 * 60_000L)
+
     fun snooze(ctx: Context, action: String, minutes: Int) =
         set(ctx, action, System.currentTimeMillis() + minutes * 60_000L)
 
@@ -107,9 +111,6 @@ class AlarmReceiver : BroadcastReceiver() {
         val workDay = p.isWorkDay() && !p.dayRest
         when (intent.action) {
             Alerts.A_START -> {
-                // armar la grabación: empieza sola al salir del domicilio
-                if (workDay && !p.dayStarted && p.autoStart && p.hasHome && !p.armed && !p.tracking)
-                    TrackingService.arm(ctx)
                 val recording = p.tracking && p.trackDate == Prefs.today()
                 if (workDay && !p.dayStarted && (p.armed || recording)) { p.reminderCount = 0; Alerts.schedule(ctx); return }
                 if (workDay && !p.dayStarted) {
@@ -118,6 +119,21 @@ class AlarmReceiver : BroadcastReceiver() {
                     if (p.reminderCount < 4) { p.reminderCount = p.reminderCount + 1; Alerts.snooze(ctx, Alerts.A_START, 15); return }
                 }
                 p.reminderCount = 0
+            }
+            Alerts.A_WATCH -> {
+                if (!p.tracking) return
+                val f = TrackStore(ctx).pointsFile(p.trackDate)
+                val age = System.currentTimeMillis() - (if (f.exists()) f.lastModified() else 0L)
+                if (age > 12 * 60_000L) {
+                    TrackingService.resume(ctx)
+                    if (System.currentTimeMillis() - p.watchAlertAt > 30 * 60_000L) {
+                        p.watchAlertAt = System.currentTimeMillis()
+                        val hm = if (f.exists()) java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(f.lastModified())) else "—"
+                        Alerts.alert(ctx, Alerts.ID_MOVE, "El GPS dejó de grabar",
+                            "No hay puntos del recorrido desde las $hm. Abre la app para reanudarlo y revisa que la batería esté sin restricción.", "resume")
+                    }
+                }
+                Alerts.scheduleWatch(ctx); return
             }
             Alerts.A_END -> {
                 if (workDay && p.dayStarted && !p.dayEnded) {

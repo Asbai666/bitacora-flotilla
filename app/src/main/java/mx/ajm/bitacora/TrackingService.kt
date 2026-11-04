@@ -259,6 +259,7 @@ class TrackingService : Service() {
 
         fun start(ctx: Context): Boolean {
             val p = Prefs(ctx)
+            Alerts.scheduleWatch(ctx)
             if (p.trackDate != Prefs.today()) {
                 p.trackDate = Prefs.today()
                 TrackStore(ctx).stateFile().delete()
@@ -277,6 +278,7 @@ class TrackingService : Service() {
         fun resume(ctx: Context) {
             val p = Prefs(ctx)
             if (!p.tracking || !recent(p.trackDate)) return
+            Alerts.scheduleWatch(ctx)
             try { ContextCompat.startForegroundService(ctx, Intent(ctx, TrackingService::class.java)) } catch (e: Exception) {
                 Alerts.alert(ctx, Alerts.ID_MOVE, "Toca para reanudar el recorrido", "Android detuvo la grabación del GPS. Abre la app para continuar.", "resume")
             }

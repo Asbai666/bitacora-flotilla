@@ -128,7 +128,7 @@ class MainActivity : AppCompatActivity() {
         if (!fresh) try {
             val c = (java.net.URL(u.toString()).openConnection() as java.net.HttpURLConnection).apply {
                 connectTimeout = 10_000; readTimeout = 15_000
-                setRequestProperty("User-Agent", "BitacoraFlotilla/3.2 (Android; mx.ajm.bitacora)")
+                setRequestProperty("User-Agent", "BitacoraFlotilla/4.0 (Android; mx.ajm.bitacora)")
                 setRequestProperty("Referer", "https://github.com/Asbai666/bitacora-flotilla")
             }
             if (c.responseCode == 200) { val bytes = c.inputStream.use { it.readBytes() }; f.writeBytes(bytes) }
@@ -143,7 +143,8 @@ class MainActivity : AppCompatActivity() {
         if (cb == 0) return
         runOnUiThread { web.evaluateJavascript("window.__cb($cb, ${JSONObject.quote(o.toString())})", null) }
     }
-    private fun fail(cb: Int, e: Throwable) = reply(cb, JSONObject().put("ok", false).put("error", e.message ?: e.javaClass.simpleName))
+    private fun fail(cb: Int, e: Throwable) = reply(cb, JSONObject().put("ok", false).put("error", e.message ?: e.javaClass.simpleName)
+        .put("net", e is java.io.IOException && e !is ServerError))
 
     private fun has(p: String) = ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
 
@@ -278,6 +279,16 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface fun clearPhoto(slot: String) { photos.clear(slot) }
 
+        /** Copia las fotos a nombres únicos para que un registro pendiente (sin señal) no las pierda. */
+        @JavascriptInterface fun stashSlots(json: String): String {
+            val a = JSONArray(json); val out = JSONObject()
+            for (i in 0 until a.length()) {
+                val slot = a.getString(i); val n = "q" + System.nanoTime().toString(36) + i + "_" + slot
+                if (photos.stash(slot, n)) out.put(slot, n)
+            }
+            return out.toString()
+        }
+
         /** Lee solo la zona de la foto que se tocó (x, y entre 0 y 1). */
         @JavascriptInterface fun ocrRegion(cb: Int, slot: String, x: Double, y: Double) {
             lifecycleScope.launch {
@@ -363,10 +374,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         /** Copia en Excel de la hoja (con las pestañas de Evidencia): la guarda en Descargas y abre Compartir (WhatsApp, correo…). */
-        @JavascriptInterface fun exportXlsx(cb: Int) {
+        @JavascriptInterface fun exportXlsx(cb: Int, month: String) {
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
-                    val r = Backend(prefs).call("xlsx", JSONObject())
+                    val r = Backend(prefs).call("xlsx", JSONObject().put("month", month))
                     val bytes = android.util.Base64.decode(r.getString("b64"), android.util.Base64.DEFAULT)
                     val name = r.optString("name", "Bitacora Flotilla.xlsx").replace(Regex("[\\\\/:*?\"<>|]"), "-")
                     val dir = java.io.File(cacheDir, "exports").apply { mkdirs(); listFiles()?.forEach { it.delete() } }

@@ -158,6 +158,14 @@ class PhotoProcessor(private val ctx: Context) {
         return metaJson(m).put("slot", slot).put("preview", watermark(slot, m, who, plates))
     }
 
+    fun stash(from: String, to: String): Boolean {
+        var any = false
+        listOf(base(from) to base(to), marked(from) to marked(to), small(from) to small(to), meta(from) to meta(to)).forEach { (a, b) ->
+            if (a.exists()) { a.copyTo(b, overwrite = true); any = true }
+        }
+        return any
+    }
+
     fun clear(slot: String) { listOf(base(slot), marked(slot), small(slot), meta(slot), captureFile(slot)).forEach { it.delete() } }
 
     fun b64(f: File): String = Base64.encodeToString(f.readBytes(), Base64.NO_WRAP)
@@ -246,11 +254,11 @@ class PhotoProcessor(private val ctx: Context) {
     }
 
     companion object {
-        fun label(slot: String): String = LABELS[slot] ?: when {
+        fun label(raw: String): String = raw.replace(Regex("^q[0-9a-z]+_"), "").let { slot -> LABELS[slot] ?: when {
             slot.startsWith("p") -> "Odómetro en parada"
             slot.startsWith("l") -> "Foto de la parada"
             else -> slot
-        }
+        } }
         val LABELS = mapOf(
             "ini" to "Odómetro al salir", "fin" to "Odómetro al llegar",
             "ticket" to "Ticket de bomba", "ticketCar" to "Voucher de cobro", "odoCarga" to "Odómetro en la carga",

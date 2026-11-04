@@ -1,16 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Medidor de combustible: arco E-F con aguja ámbar y bomba -->
+<!-- Monograma AJM (Asbai Jiménez) bajo el arco de un medidor de combustible -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <path android:strokeColor="#3A4750" android:strokeWidth="6" android:strokeLineCap="round"
-        android:pathData="M30,66 A26,26 0 1,1 78,66" />
-    <path android:strokeColor="#FF5A4F" android:strokeWidth="6" android:strokeLineCap="round"
-        android:pathData="M30,66 A26,26 0 0,1 29.5,52" />
-    <path android:strokeColor="#FFB020" android:strokeWidth="6" android:strokeLineCap="round"
-        android:pathData="M78,66 A26,26 0 0,0 67,42" />
-    <path android:fillColor="#FFB020" android:pathData="M52.4,63.5 L70,45 L55.6,66.5 z" />
-    <path android:fillColor="#FFFFFF" android:pathData="M54,65 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
-    <path android:fillColor="#FFFFFF" android:pathData="M27,71 h5 v2 h-3 v2 h3 v2 h-3 v2 h3 v2 h-5z" />
-    <path android:fillColor="#FFFFFF" android:pathData="M76,71 h5 v2 h-3 v2 h3 v2 h-3 v4 h-2z" />
+  <group android:scaleX="0.84" android:scaleY="0.84" android:pivotX="54" android:pivotY="56">
+    <!-- arco del medidor: vacío (rojo) → lleno (ámbar) -->
+    <path android:strokeColor="#2E3A44" android:strokeWidth="4" android:strokeLineCap="round"
+        android:pathData="M30,46 A26,26 0 0,1 78,46" />
+    <path android:strokeColor="#FF5A4F" android:strokeWidth="4" android:strokeLineCap="round"
+        android:pathData="M30,46 A26,26 0 0,1 33.5,37.5" />
+    <path android:strokeColor="#FFB020" android:strokeWidth="4" android:strokeLineCap="round"
+        android:pathData="M64,26.5 A26,26 0 0,1 78,46" />
+    <path android:fillColor="#FFB020" android:pathData="M53,44.5 L66,31 L55.5,46.5 z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M54,45.5 m-2.6,0 a2.6,2.6 0 1,0 5.2,0 a2.6,2.6 0 1,0 -5.2,0" />
+    <!-- A -->
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M28,80 L36,55 L44,80 M31,72 L41,72" />
+    <!-- J (ámbar) -->
+    <path android:strokeColor="#FFB020" android:strokeWidth="5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M57,55 L57,73 Q57,80 51,80 Q48,80 47,77" />
+    <!-- M -->
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M63,80 L63,55 L71,70 L79,55 L79,80" />
+  </group>
 </vector>

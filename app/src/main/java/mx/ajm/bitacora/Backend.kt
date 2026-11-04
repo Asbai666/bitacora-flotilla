@@ -5,12 +5,15 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
+/** El servicio respondió, pero rechazó la operación (no tiene caso reintentar sin cambiar algo). */
+class ServerError(msg: String) : IOException(msg)
+
 /** Habla con el servicio de Google (Apps Script) que escribe en la hoja y en Drive. */
 class Backend(private val prefs: Prefs) {
 
     fun call(action: String, payload: JSONObject): JSONObject {
         val url = prefs.scriptUrl
-        if (!url.startsWith("https://script.google.com/")) throw IOException("Falta la dirección del servicio de Google en Ajustes")
+        if (!url.startsWith("https://script.google.com/")) throw ServerError("Falta la dirección del servicio de Google en Ajustes")
         payload.put("action", action).put("token", prefs.token)
         if (prefs.userKey.isNotEmpty() && action != "register") payload.put("key", prefs.userKey)
         val body = payload.toString().toByteArray(Charsets.UTF_8)
@@ -38,9 +41,9 @@ class Backend(private val prefs: Prefs) {
         conn.disconnect()
         if (code !in 200..299) throw IOException("Google respondió $code")
         val o = try { JSONObject(text) } catch (e: Exception) {
-            throw IOException(if (text.contains("<html", true)) "El servicio de Google no está publicado para \"Cualquier usuario\"" else "Respuesta no válida del servicio")
+            throw ServerError(if (text.contains("<html", true)) "El servicio de Google no está publicado para \"Cualquier usuario\"" else "Respuesta no válida del servicio")
         }
-        if (!o.optBoolean("ok", false)) throw IOException(o.optString("error", "Error del servicio"))
+        if (!o.optBoolean("ok", false)) throw ServerError(o.optString("error", "Error del servicio"))
         return o
     }
 }

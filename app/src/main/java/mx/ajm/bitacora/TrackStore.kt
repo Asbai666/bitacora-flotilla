@@ -122,7 +122,7 @@ class TrackStore(private val ctx: Context) {
 <kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
 <Document>
 <name>${esc(title)}</name>
-<description>${esc("Vehículo $plates · ${"%.1f".format(Locale.US, totalKm)} km por GPS" + (if (odoKm.isNotBlank()) " · $odoKm km por odómetro" else "") + " · $totalStops paradas")}</description>
+<description>${esc("Bitácora Flotilla · por Asbai Jiménez (AJM) · Vehículo $plates · ${"%.1f".format(Locale.US, totalKm)} km por GPS" + (if (odoKm.isNotBlank()) " · $odoKm km por odómetro" else "") + " · $totalStops paradas")}</description>
 <Style id="ruta"><LineStyle><color>ff20b0ff</color><width>5</width></LineStyle></Style>
 <Style id="parada"><IconStyle><color>ff4f5aff</color><scale>1.2</scale><Icon><href>http://maps.google.com/mapfiles/kml/paddle/red-circle.png</href></Icon></IconStyle></Style>
 <Style id="inicio"><IconStyle><scale>1.2</scale><Icon><href>http://maps.google.com/mapfiles/kml/paddle/grn-circle.png</href></Icon></IconStyle></Style>

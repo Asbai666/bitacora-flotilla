@@ -43,3 +43,10 @@ Su hoja queda en "Bitácora Flotilla - Evidencias / Bitácoras por usuario / <No
 y se le comparte a su correo. El coordinador (No. de empleado 65071932) sigue usando su bitácora original.
 
 Para cambiar el formato de todas las bitácoras nuevas, edita la PLANTILLA (las que ya existen no cambian).
+
+## Versión 6 (app 4.0)
+
+Pega el nuevo `Code.gs` y crea una **Nueva versión** de la implementación (no hace falta volver a autorizar).
+Novedades del servicio: rechaza tramos con km negativo, las filas nuevas siempre van al final, quitar una fila
+sube las de abajo (sin huecos), se pueden insertar filas de ajuste, el primer registro de un mes nuevo guarda una
+copia del mes anterior en "Meses anteriores" y limpia la hoja, y el coordinador puede ver el resumen del equipo.

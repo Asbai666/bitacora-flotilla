@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<title>Bitácora Flotilla</title>
+<title>Bitácora Flotilla · AJM</title>
+<meta name="author" content="Asbai Jiménez (AJM)">
 <link rel="stylesheet" href="leaflet/leaflet.css">
 <style>
 /* Tablero de instrumentos: medidor de km del día, odómetro de rodillos y pantalla tipo bomba para las cargas. */
@@ -261,20 +262,103 @@ html,body{overflow-x:hidden}
 .foot button{background:transparent;border:0;color:var(--fuel);font-size:13px;padding:8px 4px}
 .chip.asu{font-family:var(--body);font-weight:600;font-size:13px}
 .statusbtn{background:transparent;border:1px solid var(--line);color:var(--ink);font-size:12px;padding:4px 10px;border-radius:999px}
+
+/* =========================================================================
+   Tema 4.0 · Bitácora Flotilla por Asbai Jiménez (AJM)
+   Tablero de instrumentos nocturno: carbón azulado, ámbar de combustible y
+   verde LED; tarjetas con brillo superior, botones con relieve y el monograma AJM.
+   ========================================================================= */
+:root{
+  --bg:#080c11; --panel:#10171e; --panel2:#151e27; --line:#223040; --ink:#eef2f5; --muted:#8f9fab; --dim:#566673;
+  --fuel:#ffb52e; --fuel2:#ff8f1f; --fuel-soft:rgba(255,181,46,.13); --led:#38e08a; --sky:#55a8ff;
+  --radius:18px; --shadow:0 12px 32px rgba(0,0,0,.42);
+}
+body{background:
+  radial-gradient(90% 45% at 100% -5%,rgba(255,165,40,.10),transparent 60%),
+  radial-gradient(80% 40% at -10% 0%,rgba(85,168,255,.08),transparent 60%),
+  var(--bg) fixed;letter-spacing:.005em}
+.wrap{padding-top:0}
+/* encabezado fijo con la marca */
+.topbar{position:sticky;top:0;z-index:12;margin:0 -16px;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 10px;
+  background:linear-gradient(180deg,rgba(8,12,17,.97),rgba(8,12,17,.86));backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  border-bottom:1px solid rgba(255,181,46,.18)}
+.brand{gap:12px}
+h1{font-size:19px;letter-spacing:.08em}
+.by{font-size:11.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;margin-top:4px;
+  background:linear-gradient(90deg,var(--fuel),var(--fuel2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.ctx{color:var(--muted);font-size:12px;text-align:center;margin-top:-4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* monograma AJM */
+.ajm{flex:none;width:42px;height:42px;border-radius:12px;display:grid;place-items:center;position:relative;
+  background:linear-gradient(145deg,#ffcc5c 0%,var(--fuel) 45%,var(--fuel2) 100%);
+  box-shadow:0 6px 18px rgba(255,150,30,.35),inset 0 1px 0 rgba(255,255,255,.55),inset 0 -2px 0 rgba(0,0,0,.18)}
+.ajm span{font-family:var(--display);font-weight:800;font-size:15px;letter-spacing:.04em;color:#1a1003;line-height:1}
+.ajm::after{content:"";position:absolute;left:7px;right:7px;top:6px;height:7px;border:2px solid rgba(26,16,3,.55);border-bottom:0;border-radius:12px 12px 0 0}
+.ajm span{margin-top:7px}
+.ajm.big{width:64px;height:64px;border-radius:18px}.ajm.big span{font-size:22px;margin-top:10px}.ajm.big::after{left:11px;right:11px;top:9px;height:11px}
+.ajm.huge{width:112px;height:112px;border-radius:30px}.ajm.huge span{font-size:38px;margin-top:16px}.ajm.huge::after{left:18px;right:18px;top:16px;height:20px;border-width:3px}
+/* pantalla de inicio */
+.splash{position:fixed;inset:0;z-index:50;display:grid;place-content:center;justify-items:center;gap:14px;text-align:center;
+  background:radial-gradient(70% 50% at 50% 40%,rgba(255,165,40,.18),transparent 70%),#06090d;animation:splashOut .5s ease 1.25s forwards}
+.splash .st{font-family:var(--display);font-weight:800;font-size:26px;letter-spacing:.12em;text-transform:uppercase;margin-top:6px}
+.splash .sb{color:var(--muted);font-size:14px;line-height:1.5}.splash .sb b{color:var(--ink);font-size:17px;letter-spacing:.02em}
+.splash .sl{color:var(--fuel);font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:700}
+.splash .ajm{animation:pop .6s cubic-bezier(.3,1.5,.5,1)}
+@keyframes splashOut{to{opacity:0;visibility:hidden}}
+@keyframes pop{from{transform:scale(.6);opacity:0}}
+/* tarjetas */
+.card,.mapcard{background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,0) 40%),var(--panel);
+  border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow),inset 0 1px 0 rgba(255,255,255,.04)}
+h2{letter-spacing:.06em}
+h3{color:var(--fuel);letter-spacing:.16em}
+/* botones con relieve */
+button{transition:transform .08s ease,filter .15s ease}
+button:active:not(:disabled){transform:translateY(1px) scale(.99);filter:brightness(.95)}
+.primary{background:linear-gradient(180deg,#ffc24d,var(--fuel) 55%,var(--fuel2));color:#1a1003;box-shadow:0 6px 16px rgba(255,150,30,.25),inset 0 1px 0 rgba(255,255,255,.45)}
+.go{background:linear-gradient(180deg,#5cf0a3,var(--led) 55%,#22b86a);color:#03200f;box-shadow:0 6px 16px rgba(56,224,138,.22),inset 0 1px 0 rgba(255,255,255,.45)}
+.ghost{background:rgba(255,255,255,.02)}
+.act{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,0)),var(--panel);box-shadow:var(--shadow)}
+.act .ic{box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 6px 14px rgba(0,0,0,.35)}
+.act.start .ic{background:linear-gradient(180deg,#5cf0a3,var(--led))}
+.act.stop .ic{background:linear-gradient(180deg,#ffc24d,var(--fuel2))}
+.act.end .ic{background:linear-gradient(180deg,#86c1ff,var(--sky));color:#04121f}
+/* pestañas */
+.tabs{background:rgba(9,13,18,.96);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid rgba(255,181,46,.15)}
+.tabs button{position:relative}
+.tabs button[aria-selected="true"]{background:var(--fuel-soft);color:var(--fuel)}
+.tabs button[aria-selected="true"]::before{content:"";position:absolute;top:-7px;left:30%;right:30%;height:3px;border-radius:0 0 3px 3px;background:var(--fuel)}
+.tabs button.alertdot::after{content:"";position:absolute;top:6px;right:calc(50% - 18px);width:9px;height:9px;border-radius:50%;background:var(--bad);box-shadow:0 0 0 2px #0a0e13}
+/* pendientes sin señal */
+.qinfo{background:var(--fuel-soft);border:1px solid rgba(255,181,46,.35);border-radius:12px;padding:9px 12px;font-size:12.5px;text-align:center}
+/* revisar bitácora */
+.audit{gap:10px}
+.issue{display:grid;gap:8px;border-radius:12px;padding:10px 12px;border:1px solid var(--line);background:#0d1318}
+.issue.bad{border-color:rgba(255,90,79,.45);background:rgba(255,90,79,.07)}
+.issue.warn{border-color:rgba(255,181,46,.4);background:rgba(255,181,46,.06)}
+.issue b{font-size:13.5px}
+/* equipo */
+.tech{display:grid;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px}
+.tstats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.tstats>div{background:#0d1318;border:1px solid var(--line);border-radius:10px;padding:6px 8px}
+.tstats .k{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.tstats .v{font-family:var(--mono);font-weight:700;font-size:14px}
+/* acerca de */
+.about{grid-template-columns:auto 1fr;align-items:center;gap:16px;margin-top:14px}
+.about b{color:var(--ink)}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
+  <header class="topbar">
     <div class="brand">
-      <svg viewBox="0 0 34 34" aria-hidden="true"><rect x="1" y="1" width="32" height="32" rx="9" fill="#121920" stroke="#25313b"/><path d="M8 23a9 9 0 1 1 18 0" fill="none" stroke="#3a4750" stroke-width="3" stroke-linecap="round"/><path d="M8 23a9 9 0 0 1 1.2-4.5" fill="none" stroke="#ff5a4f" stroke-width="3" stroke-linecap="round"/><path d="M26 23a9 9 0 0 0-3.6-7.2" fill="none" stroke="#ffb020" stroke-width="3" stroke-linecap="round"/><path d="M16.2 22.4 22.5 15.8 17.8 23.6z" fill="#ffb020"/><circle cx="17" cy="23" r="2" fill="#fff"/></svg>
-      <div style="min-width:0"><h1>Bitácora Flotilla</h1><div class="sub" id="who">—</div></div>
+      <div class="ajm" aria-hidden="true"><span>AJM</span></div>
+      <div style="min-width:0"><h1>Bitácora Flotilla</h1><div class="by">por Asbai Jiménez</div></div>
     </div>
     <div class="hd-r">
       <span class="plate" id="plate" hidden></span>
       <span class="pill idle" id="dayPill">Sin iniciar</span>
     </div>
   </header>
+  <div class="ctx" id="who">—</div>
 
   <div id="banners" style="display:grid;gap:8px"></div>
 
@@ -327,12 +411,14 @@ html,body{overflow-x:hidden}
       <button class="act end" id="actEnd"><span class="ic"><svg viewBox="0 0 24 24"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg></span><span><b>Fin de día</b><span class="s" id="actEndS"></span></span><span class="chev">›</span></button>
     </section>
     <div class="acthint" id="actHint"></div>
+    <div class="qinfo" id="qInfo" hidden></div>
 
     <section class="card" id="today" hidden></section>
   </div>
 
 <!-- Registros del mes -->
   <section id="tab-reg" role="tabpanel" style="display:grid;gap:14px" hidden>
+    <section class="card audit" id="audit"></section>
     <div class="row2"><h2>Registros del mes</h2><span class="hint" id="capacity"></span></div>
     <div class="pump">
       <div class="r"><span class="k">Km recorridos</span><span class="v" id="mKm">0</span></div>
@@ -354,6 +440,19 @@ html,body{overflow-x:hidden}
   </section>
 
   <!-- Ajustes -->
+  <section id="tab-eq" role="tabpanel" style="display:grid;gap:14px" hidden>
+    <div class="row2"><h2>Equipo</h2><span class="hint" id="teamAt"></span></div>
+    <div class="pump">
+      <div class="r"><span class="k">Km del mes (todos)</span><span class="v" id="tmKm">0</span></div>
+      <div class="r"><span class="k">Litros</span><span class="v s" id="tmLit">0.00</span></div>
+      <div class="r"><span class="k">Importe $</span><span class="v s" id="tmImp">0.00</span></div>
+      <div class="r"><span class="k">Rendimiento km/L</span><span class="v s" id="tmRend">—</span></div>
+    </div>
+    <div id="teamList" style="display:grid;gap:10px"></div>
+    <button class="ghost small" id="btnTeam">Actualizar</button>
+    <p class="hint">También se escribe en la hoja “Bitácora Flotilla – Usuarios” (columnas J a N), por si quieres usarlo en tu tablero del distrito.</p>
+  </section>
+
   <section id="tab-aj" role="tabpanel" hidden>
     <div class="card">
       <h2>Ajustes</h2>
@@ -366,7 +465,6 @@ html,body{overflow-x:hidden}
       <h3>Domicilio particular</h3>
       <div class="homebox none" id="homeState"><svg viewBox="0 0 24 24"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg><div><b id="homeTitle">Sin definir</b><div class="hint" id="homeText">Cada día el primer tramo sale del domicilio y el último llega a él.</div></div></div>
       <div class="actions"><button class="primary small" id="btnHome">Usar mi ubicación actual</button><button class="ghost small" id="btnHomeEdit">Escribir coordenadas</button></div>
-      <label class="check"><input type="checkbox" id="sAuto"><span>Armar la grabación con la alerta de inicio: empieza sola cuando el vehículo sale del domicilio.</span></label>
 
       <h3>Detección de paradas</h3>
       <div class="grid">
@@ -382,6 +480,7 @@ html,body{overflow-x:hidden}
 
       <h3>Exportar</h3>
       <p class="hint">Copia en Excel (.xlsx) de la hoja tal como está en Google: la Bitácora y las pestañas de Evidencia con sus fotos. Se guarda en Descargas y se abre Compartir para mandarla por WhatsApp.</p>
+      <label id="xMonthBox" hidden>Mes<select id="xMonth"></select></label>
       <button class="primary" id="btnXlsx">Exportar XLSX y compartir</button>
 
       <h3>Permisos para trabajar en segundo plano</h3>
@@ -404,16 +503,32 @@ html,body{overflow-x:hidden}
       <label>Usuario (No. de empleado _ Nombre completo)<input id="vUser"></label>
       <label>TAG / No. de tarjeta<input id="vTag"></label>
       <div class="actions"><button class="primary" id="btnSaveSettings">Guardar ajustes</button></div>
-      <p class="hint" style="text-align:center">Bitácora Flotilla 3.2</p>
+    </div>
+    <div class="card about">
+      <div class="ajm big" aria-hidden="true"><span>AJM</span></div>
+      <div>
+        <b>Bitácora Flotilla 4.0</b>
+        <div>Diseñada y desarrollada por <b>Asbai Jiménez</b></div>
+        <div class="hint">Coordinación PI · Distrito Huehuetoca</div>
+        <div class="hint">© 2026 Asbai Jiménez. Todos los derechos reservados.</div>
+      </div>
     </div>
   </section>
 </div>
 
-<nav class="tabs" role="tablist" aria-label="Secciones">
+<nav class="tabs" id="tabsNav" role="tablist" aria-label="Secciones">
   <button role="tab" id="t-hoy" aria-selected="true" data-tab="hoy"><svg viewBox="0 0 24 24"><path d="M3 15a9 9 0 1 1 18 0"/><path d="M12 15l5-6"/><circle cx="12" cy="15" r="1.5"/><path d="M5 20h14"/></svg>Hoy</button>
   <button role="tab" id="t-reg" aria-selected="false" data-tab="reg"><svg viewBox="0 0 24 24"><path d="M4 21V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v16"/><path d="M3 21h13"/><path d="M15 9h2a2 2 0 0 1 2 2v6a1.5 1.5 0 0 0 3 0V8l-3-3"/><path d="M7 7h5v4H7z"/></svg>Registros</button>
+  <button role="tab" id="t-eq" aria-selected="false" data-tab="eq" hidden><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M15.5 14.2c3 .3 5.5 2.6 5.5 5.8"/></svg>Equipo</button>
   <button role="tab" id="t-aj" aria-selected="false" data-tab="aj"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>Ajustes</button>
 </nav>
+
+<div class="splash" id="splash" aria-hidden="true">
+  <div class="ajm huge"><span>AJM</span></div>
+  <div class="st">Bitácora Flotilla</div>
+  <div class="sb">Diseñada y desarrollada por<br><b>Asbai Jiménez</b></div>
+  <div class="sl">Coordinación PI · Distrito Huehuetoca</div>
+</div>
 
 <div class="modal" id="modal" hidden><div class="sheet" id="sheet"></div></div>
 

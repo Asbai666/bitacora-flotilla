@@ -9,6 +9,6 @@
         <item name="android:windowBackground">@color/bg</item>
     </style>
     <color name="bg">#0B0F12</color>
-    <color name="petrol">#11181D</color>
+    <color name="petrol">#0E141A</color>
     <color name="amber">#FFB020</color>
 </resources>

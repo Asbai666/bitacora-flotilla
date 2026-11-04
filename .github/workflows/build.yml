@@ -28,8 +28,8 @@ jobs:
       - name: Publicar descarga
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.2.${{ github.run_number }}
-          name: Bitácora Flotilla 3.2.${{ github.run_number }}
-          body: "v3.2 · corrige el error al guardar la carga de combustible (CARGA_SLOTS) y mejora la lectura de tickets de bomba y vouchers."
+          tag_name: v4.0.${{ github.run_number }}
+          name: Bitácora Flotilla 4.0 · por Asbai Jiménez (AJM) · ${{ github.run_number }}
+          body: "Bitácora Flotilla 4.0 · por Asbai Jiménez (AJM). Revisar bitácora con correcciones, guardado sin señal, la hoja como fuente del día, corrección en cadena del km, cambio de mes automático, pestaña Equipo para el coordinador, vigilancia del GPS y tema renovado. Requiere el Code.gs versión 6."
           files: BitacoraFlotilla.apk
           make_latest: true
