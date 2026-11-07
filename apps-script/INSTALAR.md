@@ -50,3 +50,11 @@ Pega el nuevo `Code.gs` y crea una **Nueva versión** de la implementación (no 
 Novedades del servicio: rechaza tramos con km negativo, las filas nuevas siempre van al final, quitar una fila
 sube las de abajo (sin huecos), se pueden insertar filas de ajuste, el primer registro de un mes nuevo guarda una
 copia del mes anterior en "Meses anteriores" y limpia la hoja, y el coordinador puede ver el resumen del equipo.
+
+## Versión 7 (fotos de evidencia dentro de su recuadro)
+
+Las fotos de las pestañas de Evidencia ahora se insertan dentro de la celda de su recuadro (TICKET CAR, ODÓMETRO,
+TICKET BOMBA, RESPALDO), así se ven en su lugar también en la app de Google Sheets del celular. Las que quedaron
+flotando se acomodan solas la primera vez que la app lee cada bitácora (se buscan en Drive por su nombre).
+Si quieres repetirlo para tu bitácora, ejecuta la función **acomodarEvidencias** desde el editor.
+Pega el nuevo `Code.gs` y crea una **Nueva versión** de la implementación.

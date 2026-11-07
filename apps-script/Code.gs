@@ -43,12 +43,12 @@ function doPost(e) {
     CTX = req.key ? user_(req.key) : null;      // sin clave: apps anteriores del coordinador → bitácora original
     if (CTX && ['save', 'carga', 'rest'].indexOf(req.action) >= 0) touch_();
     switch (req.action) {
-      case 'ping':   fixTotals_(sh_()); return json_({ ok: true, version: 6, owner: isOwner_(), user: CTX ? { nombre: CTX.nombre, empleado: CTX.emp, sheetUrl: sheetUrl_() } : null });
+      case 'ping':   fixTotals_(sh_()); return json_({ ok: true, version: 7, owner: isOwner_(), user: CTX ? { nombre: CTX.nombre, empleado: CTX.emp, sheetUrl: sheetUrl_() } : null });
       case 'insert': return json_(insert_(req));
       case 'team':   return json_(team_());
       case 'xlsx':   return json_(xlsx_(req));
       case 'carga':  return json_(carga_(req));
-      case 'read':   return json_(read_());
+      case 'read':   { const fx = maybeFixEvidence_(); const r = read_(); if (fx && fx.moved) r.evidenceFixed = fx; return json_(r); }
       case 'save':   return json_(save_(req));
       case 'rest':   return json_(rest_(req));
       case 'delete': return json_(del_(req));
@@ -281,13 +281,13 @@ function save_(req) {
   return { ok: true, row: r, links: links, evidenceTab: evidenceTab, warn: warn, archived: archived };
 }
 
+// La foto va DENTRO de la celda del recuadro (celdas combinadas): así se ve igual en la app de Sheets del
+// celular y en la computadora. Si Google no acepta la imagen en celda, se usa una imagen flotante.
+const inBox_ = (box, c) => c.getRow() >= box.row && c.getRow() < box.row + box.rows && c.getColumn() >= box.col && c.getColumn() < box.col + box.cols;
 function placeImage_(sheet, box, b64, name) {
   if (!box) return;
-  // quita la imagen anterior de ese recuadro
-  sheet.getImages().forEach(img => {
-    const c = img.getAnchorCell();
-    if (c.getRow() >= box.row && c.getRow() < box.row + box.rows && c.getColumn() >= box.col && c.getColumn() < box.col + box.cols) img.remove();
-  });
+  sheet.getImages().forEach(img => { if (inBox_(box, img.getAnchorCell())) img.remove(); });   // flotantes anteriores
+  if (setCellImage_(sheet, box, b64, name)) return;
   let w = 0, h = 0;
   for (let c = 0; c < box.cols; c++) w += sheet.getColumnWidth(box.col + c);
   for (let r = 0; r < box.rows; r++) h += sheet.getRowHeight(box.row + r);
@@ -296,6 +296,75 @@ function placeImage_(sheet, box, b64, name) {
   const iw = img.getWidth(), ih = img.getHeight();
   const s = Math.min((w - 6) / iw, (h - 6) / ih);
   img.setWidth(Math.round(iw * s)).setHeight(Math.round(ih * s)).setAnchorCellXOffset(3).setAnchorCellYOffset(3);
+}
+function setCellImage_(sheet, box, b64, name) {
+  try {
+    const img = SpreadsheetApp.newCellImage().setSourceUrl('data:image/jpeg;base64,' + b64)
+      .setAltTextTitle(name || 'Evidencia').setAltTextDescription(name || 'Evidencia').build();
+    sheet.getRange(box.row, box.col).setValue(img).setHorizontalAlignment('center').setVerticalAlignment('middle');
+    return true;
+  } catch (e) { return false; }
+}
+// Deja vacía una pestaña de Evidencia: fotos (en celda y flotantes), litros, montos, fecha y comentarios
+function clearEvidence_(ev) {
+  ev.getImages().forEach(i => i.remove());
+  Object.keys(BOXES).forEach(k => ev.getRange(BOXES[k].row, BOXES[k].col).clearContent());
+  ['I4', 'J4', 'I5'].forEach(a => ev.getRange(a).clearContent());
+  const cr = commentsRow_(ev); if (cr) ev.getRange(cr, 2).clearContent();
+}
+
+// ---------- pasar a su recuadro las fotos que quedaron flotando (versiones anteriores) ----------
+// Se hace una sola vez por bitácora, al leerla: busca cada foto en Drive (se guardó con su nombre)
+// y la pone dentro de su recuadro; la flotante se quita.
+const BOX_PHOTO = { ticketCar: ['Voucher de cobro', 'Ticket Car'], ticketBomba: ['Ticket de bomba'], odometro: ['Odómetro en la carga', 'Odómetro'], respaldo: ['Evidencia adicional'] };
+function fixEvidence_() {
+  const ss = ss_(); let moved = 0, missing = 0;
+  ss.getSheets().forEach(ev => {
+    if (!/^\d+a Evidencia$/.test(ev.getName())) return;
+    const imgs = ev.getImages(); if (!imgs.length) return;
+    const f = ev.getRange('I5').getValue();
+    const iso = f instanceof Date && !isNaN(f) ? Utilities.formatDate(f, ss.getSpreadsheetTimeZone(), 'yyyy-MM-dd') : '';
+    imgs.forEach(img => {
+      const key = Object.keys(BOXES).find(k => inBox_(BOXES[k], img.getAnchorCell()));
+      if (!key) return;
+      const file = iso ? findPhoto_(iso, BOX_PHOTO[key]) : null;
+      const b64 = file ? photoB64_(file) : null;
+      if (b64 && setCellImage_(ev, BOXES[key], b64, file.getName())) { img.remove(); moved++; } else missing++;
+    });
+  });
+  return { moved: moved, missing: missing };
+}
+function findPhoto_(iso, labels) {
+  const it = rootFolder_().getFoldersByName(iso.slice(0, 7));
+  if (!it.hasNext()) return null;
+  const folder = it.next();
+  for (const label of labels) {
+    let best = null;
+    const files = folder.searchFiles('title contains "' + iso + ' ' + label + '" and trashed = false');
+    while (files.hasNext()) { const f = files.next(); if (!best || f.getDateCreated() > best.getDateCreated()) best = f; }
+    if (best) return best;
+  }
+  return null;
+}
+// Versión reducida (≈1000 px) de la foto de Drive para que quepa en la celda
+function photoB64_(file) {
+  try {
+    const tok = ScriptApp.getOAuthToken();
+    const meta = JSON.parse(UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + file.getId() + '?fields=thumbnailLink', { headers: { Authorization: 'Bearer ' + tok } }).getContentText());
+    if (meta.thumbnailLink) {
+      const r = UrlFetchApp.fetch(meta.thumbnailLink.replace(/=s\d+$/, '=s1000'), { headers: { Authorization: 'Bearer ' + tok }, muteHttpExceptions: true });
+      if (r.getResponseCode() === 200) return Utilities.base64Encode(r.getBlob().getBytes());
+    }
+  } catch (e) {}
+  const blob = file.getBlob();
+  return blob.getBytes().length < 1500000 ? Utilities.base64Encode(blob.getBytes()) : null;
+}
+function maybeFixEvidence_() {
+  const k = 'fx:' + sheetId_();
+  if (PROPS.getProperty(k)) return null;
+  const r = fixEvidence_();
+  PROPS.setProperty(k, JSON.stringify(r));
+  return r;
 }
 
 function monthFolder_(iso) {
@@ -364,9 +433,7 @@ function evidenceTab_(n) {
   if (ev) return ev;
   const tpl = ss.getSheetByName(CONFIG.EVIDENCE_TABS[0]);
   ev = tpl.copyTo(ss).setName(name);
-  ev.getImages().forEach(img => img.remove());
-  ['I4', 'J4', 'I5'].forEach(a => ev.getRange(a).clearContent());
-  const cr = commentsRow_(ev); if (cr) ev.getRange(cr, 2).clearContent();
+  clearEvidence_(ev);
   ev.getRange('H2').setValue('CARGA ' + n);
   ss.setActiveSheet(ev); ss.moveActiveSheet(ss.getNumSheets());
   return ev;
@@ -410,6 +477,12 @@ function autorizar() {
   const t = template_();
   registry_();
   Logger.log('Listo: ' + r.name + ' (' + Math.round(r.size / 1024) + ' KB) · plantilla ' + t);
+}
+
+// Ejecuta esta función desde el editor si quieres volver a acomodar las fotos de tu bitácora en sus recuadros.
+function acomodarEvidencias() {
+  PROPS.deleteProperty('fx:' + CONFIG.SHEET_ID);
+  Logger.log(JSON.stringify(fixEvidence_()));
 }
 
 // ---------- usuarios ----------
@@ -511,9 +584,7 @@ function template_() {
   fixTotals_(b);
   CONFIG.EVIDENCE_TABS.forEach(n => {
     const ev = t.getSheetByName(n); if (!ev) return;
-    ev.getImages().forEach(i => i.remove());
-    ['I4', 'J4', 'I5'].forEach(a => ev.getRange(a).clearContent());
-    const cr = commentsRow_(ev); if (cr) ev.getRange(cr, 2).clearContent();
+    clearEvidence_(ev);
   });
   t.setActiveSheet(b); t.moveActiveSheet(1);
   DriveApp.getFileById(t.getId()).moveTo(DriveApp.getFolderById(CONFIG.FOLDER_ID));
@@ -563,9 +634,7 @@ function ensureMonth_(sh, iso) {
     const n = ev.getName(), k = (n.match(/^(\d+)a Evidencia$/) || [])[1];
     if (!k) return;
     if (Number(k) > CONFIG.EVIDENCE_TABS.length) { ss.deleteSheet(ev); return; }
-    ev.getImages().forEach(i => i.remove());
-    ['I4', 'J4', 'I5'].forEach(a => ev.getRange(a).clearContent());
-    const cr = commentsRow_(ev); if (cr) ev.getRange(cr, 2).clearContent();
+    clearEvidence_(ev);
   });
   sh.getRange('B5').setValue(label(m));
   fixTotals_(sh);
