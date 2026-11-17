@@ -20,7 +20,7 @@ class Backend(private val prefs: Prefs) {
 
         val c = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"; doOutput = true; instanceFollowRedirects = false
-            connectTimeout = 20_000; readTimeout = 120_000
+            connectTimeout = 20_000; readTimeout = if (action == "xlsx") 330_000 else 120_000
             setRequestProperty("Content-Type", "text/plain; charset=utf-8")
             setFixedLengthStreamingMode(body.size)
         }
@@ -33,7 +33,7 @@ class Backend(private val prefs: Prefs) {
             val loc = conn.getHeaderField("Location") ?: break
             conn.disconnect()
             conn = (URL(loc).openConnection() as HttpURLConnection).apply {
-                instanceFollowRedirects = false; connectTimeout = 20_000; readTimeout = 120_000
+                instanceFollowRedirects = false; connectTimeout = 20_000; readTimeout = if (action == "xlsx") 330_000 else 120_000
             }
             code = conn.responseCode; hops++
         }
@@ -43,7 +43,12 @@ class Backend(private val prefs: Prefs) {
         val o = try { JSONObject(text) } catch (e: Exception) {
             throw ServerError(if (text.contains("<html", true)) "El servicio de Google no está publicado para \"Cualquier usuario\"" else "Respuesta no válida del servicio")
         }
-        if (!o.optBoolean("ok", false)) throw ServerError(o.optString("error", "Error del servicio"))
+        if (!o.optBoolean("ok", false)) {
+            val msg = o.optString("error", "Error del servicio")
+            // hoja ocupada (candado): es pasajero, se trata como falta de señal para que el registro vaya a la cola y se reintente
+            if (o.optBoolean("busy", false) || Regex("candado|lock", RegexOption.IGNORE_CASE).containsMatchIn(msg)) throw IOException(msg)
+            throw ServerError(msg)
+        }
         return o
     }
 }

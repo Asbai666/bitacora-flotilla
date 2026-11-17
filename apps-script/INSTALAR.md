@@ -64,3 +64,10 @@ Pega el nuevo `Code.gs` y crea una **Nueva versión** de la implementación.
 Al exportar a XLSX se hace una copia temporal donde cada foto de evidencia pasa a imagen flotante del tamaño de su
 recuadro (Excel muestra en miniatura las fotos que van dentro de la celda); la copia se borra al terminar.
 Pega el nuevo `Code.gs` y crea una **Nueva versión** de la implementación.
+
+## Versión 9 (app 4.3: el Excel ya no espera el candado)
+
+Exportar a XLSX y la pestaña Equipo ya no esperan el candado de escritura: una exportación lenta (copia + fotos)
+no frena los guardados ni se queda esperando a que terminen. Los guardados esperan hasta 90 s; si aun así la hoja
+está ocupada, la app lo reintenta sola desde la cola.
+Pega el nuevo `Code.gs` y crea una **Nueva versión** de la implementación (la dirección /exec no cambia).

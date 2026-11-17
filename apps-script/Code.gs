@@ -33,17 +33,22 @@ function doGet() {
   return json_({ ok: true, service: 'bitacora-flotilla' });
 }
 
+const NO_LOCK = ['xlsx', 'team'];
+
 function doPost(e) {
   const lock = LockService.getScriptLock();
   try {
     const req = JSON.parse(e.postData.contents || '{}');
     if (req.token !== CONFIG.TOKEN) return json_({ ok: false, error: 'Clave de acceso incorrecta' });
-    lock.waitLock(30000);
+    // Solo las acciones que escriben en la hoja esperan el candado. Exportar a Excel y consultar el equipo
+    // no lo usan: así una exportación lenta no frena a nadie y nadie la frena a ella.
+    if (NO_LOCK.indexOf(req.action) < 0 && !lock.tryLock(90000))
+      return json_({ ok: false, busy: true, error: 'La bitácora está ocupada guardando otro registro. Intenta de nuevo en unos segundos.' });
     if (req.action === 'register') return json_(register_(req));
     CTX = req.key ? user_(req.key) : null;      // sin clave: apps anteriores del coordinador → bitácora original
     if (CTX && ['save', 'carga', 'rest'].indexOf(req.action) >= 0) touch_();
     switch (req.action) {
-      case 'ping':   fixTotals_(sh_()); return json_({ ok: true, version: 8, owner: isOwner_(), user: CTX ? { nombre: CTX.nombre, empleado: CTX.emp, sheetUrl: sheetUrl_() } : null });
+      case 'ping':   fixTotals_(sh_()); return json_({ ok: true, version: 9, owner: isOwner_(), user: CTX ? { nombre: CTX.nombre, empleado: CTX.emp, sheetUrl: sheetUrl_() } : null });
       case 'insert': return json_(insert_(req));
       case 'team':   return json_(team_());
       case 'xlsx':   return json_(xlsx_(req));

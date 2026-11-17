@@ -28,8 +28,8 @@ jobs:
       - name: Publicar descarga
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v4.2.${{ github.run_number }}
-          name: Bitácora Flotilla 4.2 · por Asbai Jiménez (AJM) · ${{ github.run_number }}
-          body: "Bitácora Flotilla 4.2 · por Asbai Jiménez (AJM). Nueva pantalla de arranque estilo terminal con emblema propio (halcón AJM) y animación de inicio; toca la pantalla para saltarla. Requiere el Code.gs versión 8."
+          tag_name: v4.3.${{ github.run_number }}
+          name: Bitácora Flotilla 4.3 · por Asbai Jiménez (AJM) · ${{ github.run_number }}
+          body: "Bitácora Flotilla 4.3 · por Asbai Jiménez (AJM). Asunto obligatorio en cada parada y en el cierre del día; no se cierra el día con paradas sin asunto; Revisar bitácora marca filas sin asunto. Exportar XLSX ya no espera el candado (requiere Code.gs versión 9)."
           files: BitacoraFlotilla.apk
           make_latest: true

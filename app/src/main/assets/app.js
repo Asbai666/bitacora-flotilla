@@ -513,8 +513,17 @@ function kmField(sh, label, value, estimated) {
 }
 const AKEY = "bitacora-asuntos";
 function rememberAsunto(t) { t = String(t || "").trim(); if (!t || /^Regreso a domicilio$/i.test(t)) return; const l = load(AKEY, []).filter(x => x.toLowerCase() !== t.toLowerCase()); l.unshift(t); save(AKEY, l.slice(0, 6)); }
+// El asunto es obligatorio en cada parada y en el cierre del día
+function asuntoOk(asu, err) {
+  const v = asu.value.trim();
+  if (v.length >= 3) return true;
+  asu.classList.add("bad"); failMsg(err, "Escribe el asunto: es obligatorio en cada parada y en el cierre del día."); asu.focus();
+  try { asu.scrollIntoView({ block: "center" }); } catch (e) {}
+  return false;
+}
+const sinAsunto = d => d && d.entry && !String(d.entry.asunto || "").trim() && !/^AJUSTE/i.test(d.entry.asunto || "");
 function asuntoField(sh, value) {
-  const l = el("label", "", "Asunto"); const i = el("input"); i.id = "f_asunto"; i.placeholder = "Supervisión de OS, soporte en campo, junta…"; i.value = value || ""; bindInput(i); l.appendChild(i); sh.appendChild(l);
+  const l = el("label", "", "Asunto (obligatorio)"); const i = el("input"); i.id = "f_asunto"; i.required = true; i.placeholder = "Supervisión de OS, soporte en campo, junta…"; i.value = value || ""; bindInput(i); l.appendChild(i); sh.appendChild(l);
   const recent = load(AKEY, []);
   if (recent.length) {
     const c = el("div", "chips");
@@ -781,6 +790,7 @@ function stopSheet(o) {
     sh.append(ok, no);
     ok.onclick = async () => {
       const km = num(ik.value);
+      if (!asuntoOk(asu, err)) return;
       if (km === null) { ik.classList.add("bad"); failMsg(err, "Falta el km: toma la foto del odómetro o usa el estimado por GPS."); return; }
       if (o.ini !== null && km < o.ini) { ik.classList.add("bad"); failMsg(err, "El km no puede ser menor al inicial del tramo (" + fmt(o.ini) + ")."); return; }
       const mm = mismatch(o.ini !== null ? km - o.ini : null, o.gps());
@@ -945,6 +955,15 @@ async function openFinish(homeStop) {
   const endT = homeStop ? homeStop.start : past ? lastPointT() : 0;
   // versiones anteriores ya registraban la llegada a casa como parada: entonces se corrige esa fila
   const legacyHome = !homeStop && lastDone && !day.row && isHomeText(lastDone.a) && (tramoKm(endT) || 0) < 0.5;
+  // no se cierra el día mientras haya paradas sin asunto: se abre la primera que falte
+  const falta = day.done.filter(d => sinAsunto(d) && !(legacyHome && d === lastDone));
+  if (falta.length) {
+    const d = falta[0], t = trackInfo();
+    const i = t.stops.findIndex(x => day.stopsDone[x.start] && day.stopsDone[x.start].row === d.row);
+    banner("warn", falta.length === 1 ? "Falta el asunto de 1 parada" : "Faltan los asuntos de " + falta.length + " paradas", "Escríbelo para poder cerrar el día.", null, "asunto");
+    if (i >= 0) { const st = day.stopsDone[t.stops[i].start]; openConfirm(t.stops[i], i, st.row, st.km); return; }
+    const x = (sheet.rows || []).find(r => r.r === d.row); if (x) { editRow(x); return; }
+  }
   const ini = legacyHome ? num(lastDone.entry.kmIni) : num(day.entry.kmIni);
   const gpsTramo = legacyHome ? (lastDone.gps ?? null) : tramoKm(endT);
   const est = ini !== null && gpsTramo !== null ? Math.round(ini + gpsTramo) : null;
@@ -973,6 +992,7 @@ async function openFinish(homeStop) {
     sh.append(ok, no);
     ok.onclick = async () => {
       const km = num(ik.value);
+      if (!asuntoOk(asu, err)) return;
       if (km === null) { ik.classList.add("bad"); failMsg(err, "Falta el km final: toma la foto o escríbelo."); return; }
       if (ini !== null && km < ini) { ik.classList.add("bad"); failMsg(err, "El km final no puede ser menor al inicial del tramo (" + fmt(ini) + ")."); return; }
       const mm = mismatch(ini !== null ? km - ini : null, gpsTramo);
@@ -1349,6 +1369,8 @@ function audit(rows) {
     }
     if (isHomeText(x.de) && isHomeText(x.a) && prev && isHomeText(prev.a) && prev.fTras === x.fTras && !/DESCANSO/i.test(x.asunto))
       out.push({ x, kind: "warn", title: "Cierre repetido", text: "Va del domicilio al domicilio después de haber llegado.", fixes: [{ label: "Quitar fila", danger: true, run: () => removeRow(x) }, { label: "Corregir a mano", run: () => editRow(x) }] });
+    if ((x.kmIni !== "" || x.kmFin !== "") && !current && !String(x.asunto || "").trim())
+      out.push({ x, kind: "warn", title: "Sin asunto", text: (x.de || "—") + " → " + (x.a || "—") + ". Cada parada debe llevar su asunto.", fixes: [{ label: "Escribir asunto", run: () => editRow(x) }] });
     if (x.kmFin !== "") prev = x;
   });
   return out;
@@ -1497,7 +1519,7 @@ function editRow(x) {
     const g3 = el("div", "grid"); g3.append(mk("a", "A"), mk("aC", "Coordenadas a", "text", "num"));
     const g4 = el("div", "grid"); g4.append(mk("fCarga", "Fecha carga", "date"), mk("importe", "Importe", "number", "num"), mk("litros", "Litros", "number", "num"));
     const g5 = el("div", "grid"); g5.append(mk("ticket", "# Ticket o folio"), mk("factura", "No. factura"));
-    sh.append(g1, mk("asunto", "Asunto"), g2, g3, el("h3", "", "Carga"), g4, g5);
+    sh.append(g1, mk("asunto", "Asunto (obligatorio)"), g2, g3, el("h3", "", "Carga"), g4, g5);
     const err = el("div", "err"); err.hidden = true; sh.appendChild(err);
     const act = el("div", "actions");
     const ok = el("button", "primary", "Guardar cambios"), del = el("button", "danger", "Borrar fila"), cancel = el("button", "ghost", "Cancelar");
@@ -1505,6 +1527,7 @@ function editRow(x) {
     ok.onclick = async () => {
       const entry = {}; ROWF.forEach(k => entry[k] = f[k].value.trim());
       if (num(entry.kmFin) !== null && num(entry.kmIni) !== null && num(entry.kmFin) < num(entry.kmIni)) { err.textContent = "El km final no puede ser menor que el inicial."; err.hidden = false; return; }
+      if ((entry.kmIni || entry.kmFin) && entry.asunto.length < 3) { f.asunto.classList.add("bad"); err.textContent = "Escribe el asunto: es obligatorio en cada registro de recorrido."; err.hidden = false; f.asunto.focus(); return; }
       ok.disabled = true; ok.textContent = "Guardando…";
       const r = await call("save", { row: x.r, entry, photoSlots: [], keepCarga: true });
       if (!r.ok) { err.textContent = r.error; err.hidden = false; ok.disabled = false; ok.textContent = "Guardar cambios"; return; }
@@ -1600,7 +1623,9 @@ $("btnXlsx").onclick = async () => {
   b.disabled = false; b.textContent = "Exportar XLSX y compartir";
   if (!r.ok) {
     const perm = /permis|authoriz|autoriz|UrlFetch|external/i.test(r.error || "");
-    banner("bad", "No se generó el XLSX", perm ? "Falta autorizar la exportación en Apps Script: ejecuta la función “autorizar” una vez y vuelve a implementar." : r.error);
+    const lock = /candado|lock/i.test(r.error || "");
+    banner("bad", "No se generó el XLSX", perm ? "Falta autorizar la exportación en Apps Script: ejecuta la función “autorizar” una vez y vuelve a implementar."
+      : lock ? "El servicio de Google todavía es la versión anterior. Actualiza el Code.gs a la versión 9 (Implementar → Administrar implementaciones → Nueva versión) y vuelve a intentar." : r.error);
     return;
   }
   banner("ok", "XLSX listo", r.name + " (" + Math.max(1, Math.round(r.size / 1024)) + " KB)" + (r.local ? " · también en " + r.local : "") + ".", null, "xlsx");
