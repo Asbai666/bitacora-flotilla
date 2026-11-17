@@ -790,3 +790,6 @@ function track_(req) {
   });
   return { ok: true, links: out };
 }
+
+// ===================== FIN DEL CÓDIGO · Bitácora Flotilla v9 =====================
+// Si debajo de esta línea hay algo más, bórralo: es código viejo que quedó al pegar.
