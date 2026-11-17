@@ -178,7 +178,7 @@ function beep() {
 
 window.onNative = (type, s) => {
   const d = JSON.parse(s);
-  if (type === "alert" && d.kind !== "test") { beep(); showAlert(d.kind, d.title, d.text); }
+  if (type === "alert" && d.kind !== "test") showAlert(d.kind, d.title, d.text);
   if (type === "openAlert") showAlert(d.kind);
   if (type === "departed") { cfg = JSON.parse(A.config()); startFromDeparture(d.t); }
   if (type === "track" || type === "stopClosed") { renderToday(); autoRegisterPending(); }
@@ -1040,7 +1040,7 @@ function initMap() {
   if (map || !window.L) { if (!window.L) $("mapBadge").textContent = "Mapa no disponible"; return; }
   map = L.map("map", { zoomControl: false, attributionControl: true, preferCanvas: true, tap: true }).setView([19.83, -99.21], 13);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, className: "darktiles", attribution: "© OpenStreetMap" }).addTo(map);
-  routeLine = L.polyline([], { color: "#ffb020", weight: 4, opacity: .95, lineJoin: "round" }).addTo(map);
+  routeLine = L.polyline([], { color: routeColor(), weight: 4, opacity: .95, lineJoin: "round" }).addTo(map);
   marks = L.layerGroup().addTo(map);
   map.on("movestart", () => { if (!fitting) userMoved = true; });
 }
@@ -1605,7 +1605,7 @@ $("btnXlsx").onclick = async () => {
   }
   banner("ok", "XLSX listo", r.name + " (" + Math.max(1, Math.round(r.size / 1024)) + " KB)" + (r.local ? " · también en " + r.local : "") + ".", null, "xlsx");
 };
-$("btnTest").onclick = () => { A.testAlert(); beep(); };
+$("btnTest").onclick = () => A.testAlert();
 $("btnSaveSettings").onclick = async () => {
   let wd = 0; DAYN.forEach((n, i) => { if ($("day" + i).checked) wd |= 1 << i; });
   const c = { startAt: fromTime($("sStart").value), endAt: fromTime($("sEnd").value), stopMinutes: Math.max(2, Math.min(30, +$("sStop").value || 7)),
@@ -1665,6 +1665,18 @@ $("btnLogout").onclick = () => {
   ["bitacora-dia-v1", "bitacora-carga", "bitacora-gps-filas", "bitacora-salida-atendida"].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
   location.reload();
 };
+
+// ---------- tema: terminal (por defecto) o tablero ámbar ----------
+const routeColor = () => document.body.classList.contains("term") ? "#3dd6ff" : "#ffb020";
+function setTheme(t) {
+  save("bitacora-tema", t);
+  document.body.classList.toggle("term", t !== "dash");
+  $("thTerm").setAttribute("aria-pressed", String(t !== "dash")); $("thDash").setAttribute("aria-pressed", String(t === "dash"));
+  if (routeLine) routeLine.setStyle({ color: routeColor() });
+}
+$("thTerm").onclick = () => setTheme("term");
+$("thDash").onclick = () => setTheme("dash");
+setTheme(load("bitacora-tema", "term"));
 
 // ---------- recordatorios dentro de la app ----------
 function checkReminders() {

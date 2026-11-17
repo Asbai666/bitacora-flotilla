@@ -43,7 +43,7 @@ function doPost(e) {
     CTX = req.key ? user_(req.key) : null;      // sin clave: apps anteriores del coordinador → bitácora original
     if (CTX && ['save', 'carga', 'rest'].indexOf(req.action) >= 0) touch_();
     switch (req.action) {
-      case 'ping':   fixTotals_(sh_()); return json_({ ok: true, version: 7, owner: isOwner_(), user: CTX ? { nombre: CTX.nombre, empleado: CTX.emp, sheetUrl: sheetUrl_() } : null });
+      case 'ping':   fixTotals_(sh_()); return json_({ ok: true, version: 8, owner: isOwner_(), user: CTX ? { nombre: CTX.nombre, empleado: CTX.emp, sheetUrl: sheetUrl_() } : null });
       case 'insert': return json_(insert_(req));
       case 'team':   return json_(team_());
       case 'xlsx':   return json_(xlsx_(req));
@@ -288,14 +288,45 @@ function placeImage_(sheet, box, b64, name) {
   if (!box) return;
   sheet.getImages().forEach(img => { if (inBox_(box, img.getAnchorCell())) img.remove(); });   // flotantes anteriores
   if (setCellImage_(sheet, box, b64, name)) return;
+  floatImage_(sheet, box, Utilities.newBlob(Utilities.base64Decode(b64), 'image/jpeg', name || 'evidencia.jpg'));
+}
+// Imagen flotante que ocupa todo el recuadro (sin deformarla) y centrada en él
+function floatImage_(sheet, box, blob) {
   let w = 0, h = 0;
   for (let c = 0; c < box.cols; c++) w += sheet.getColumnWidth(box.col + c);
   for (let r = 0; r < box.rows; r++) h += sheet.getRowHeight(box.row + r);
-  const blob = Utilities.newBlob(Utilities.base64Decode(b64), 'image/jpeg', name || 'evidencia.jpg');
   const img = sheet.insertImage(blob, box.col, box.row);
   const iw = img.getWidth(), ih = img.getHeight();
-  const s = Math.min((w - 6) / iw, (h - 6) / ih);
-  img.setWidth(Math.round(iw * s)).setHeight(Math.round(ih * s)).setAnchorCellXOffset(3).setAnchorCellYOffset(3);
+  const s = Math.min((w - 4) / iw, (h - 4) / ih);
+  const nw = Math.round(iw * s), nh = Math.round(ih * s);
+  img.setWidth(nw).setHeight(nh).setAnchorCellXOffset(Math.max(2, Math.round((w - nw) / 2))).setAnchorCellYOffset(Math.max(2, Math.round((h - nh) / 2)));
+}
+// Copia temporal para exportar: las fotos en celda pasan a flotantes del tamaño de su recuadro
+function exportCopy_(srcId) {
+  SpreadsheetApp.flush();
+  const copy = DriveApp.getFileById(srcId).makeCopy('_exportar_' + Date.now(), rootFolder_());
+  const ss = SpreadsheetApp.openById(copy.getId());
+  const tok = ScriptApp.getOAuthToken();
+  ss.getSheets().forEach(ev => {
+    if (!/^\d+a Evidencia$/.test(ev.getName())) return;
+    const f = ev.getRange('I5').getValue();
+    const iso = f instanceof Date && !isNaN(f) ? Utilities.formatDate(f, ss.getSpreadsheetTimeZone(), 'yyyy-MM-dd') : '';
+    Object.keys(BOXES).forEach(k => {
+      const box = BOXES[k], cell = ev.getRange(box.row, box.col), v = cell.getValue();
+      if (!v || typeof v !== 'object' || typeof v.getContentUrl !== 'function') return;   // no es foto en celda
+      let blob = null;
+      try {
+        const r = UrlFetchApp.fetch(v.getContentUrl(), { headers: { Authorization: 'Bearer ' + tok }, muteHttpExceptions: true });
+        if (r.getResponseCode() === 200) blob = r.getBlob();
+      } catch (e) {}
+      if (!blob && iso) { const file = findPhoto_(iso, BOX_PHOTO[k]); if (file) { const b64 = photoB64_(file); if (b64) blob = Utilities.newBlob(Utilities.base64Decode(b64), 'image/jpeg', file.getName()); } }
+      if (!blob) return;
+      cell.clearContent();
+      floatImage_(ev, box, blob);
+    });
+  });
+  SpreadsheetApp.flush();
+  return copy.getId();
 }
 function setCellImage_(sheet, box, b64, name) {
   try {
@@ -459,8 +490,14 @@ function xlsx_(req) {
   const month = req && req.month ? String(req.month) : '';
   const arch = month ? (archives_().months || {})[month] : null;
   if (month && !arch) throw new Error('No hay copia guardada de ese mes');
-  const url = 'https://docs.google.com/spreadsheets/d/' + (arch || sheetId_()) + '/export?format=xlsx';
-  const res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+  // Excel no muestra bien las fotos que van dentro de la celda (salen en miniatura): se exporta una copia
+  // temporal donde cada foto se vuelve imagen flotante del tamaño de su recuadro; la copia se borra al terminar.
+  const tmp = exportCopy_(arch || sheetId_());
+  let res;
+  try {
+    const url = 'https://docs.google.com/spreadsheets/d/' + tmp + '/export?format=xlsx';
+    res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+  } finally { try { DriveApp.getFileById(tmp).setTrashed(true); } catch (e) {} }
   if (res.getResponseCode() !== 200) throw new Error('Google no generó el archivo XLSX (código ' + res.getResponseCode() + ')');
   const sh = arch ? SpreadsheetApp.openById(arch).getSheetByName(CONFIG.TAB) : sh_();
   const mes = String(sh.getRange('B5').getValue() || '').trim() || Utilities.formatDate(new Date(), 'America/Mexico_City', 'MM-yyyy');

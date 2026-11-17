@@ -16,7 +16,7 @@ import java.util.Calendar
 
 object Alerts {
     const val CH_TRACK = "seguimiento"
-    const val CH_ALERT = "alertas_v1"
+    const val CH_ALERT = "alertas_v2"   // v2: sin sonido del sistema; la app toca su propia sirena (ver Siren)
     const val ID_TRACK = 1
     const val ID_START = 10
     const val ID_END = 11
@@ -30,14 +30,13 @@ object Alerts {
         nm.createNotificationChannel(NotificationChannel(CH_TRACK, "Recorrido en curso", NotificationManager.IMPORTANCE_LOW).apply {
             description = "Aviso fijo mientras se graba el recorrido del día"
         })
-        nm.createNotificationChannel(NotificationChannel(CH_ALERT, "Alertas de bitácora", NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "Inicio y fin de jornada, vehículo detenido"
+        try { nm.deleteNotificationChannel("alertas_v1") } catch (e: Exception) { }
+        nm.createNotificationChannel(NotificationChannel(CH_ALERT, "Alertas de bitácora (sirena)", NotificationManager.IMPORTANCE_HIGH).apply {
+            description = "Paradas, llegada al domicilio, inicio y fin de día, GPS detenido. Suena una sirena por el canal de alarma."
             enableVibration(true); vibrationPattern = VIBRATE
-            enableLights(true); lightColor = 0xFFFFB020.toInt()
-            setSound(
-                RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM) ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
-                AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
-            )
+            enableLights(true); lightColor = 0xFF00FF9C.toInt()
+            setSound(null, null)
+            setBypassDnd(true)
             lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
         })
     }
@@ -66,6 +65,7 @@ object Alerts {
             .setFullScreenIntent(openAppIntent(ctx, action), false)
             .build()
         try { NotificationManagerCompat.from(ctx).notify(id, n) } catch (e: SecurityException) { }
+        Siren.play(ctx)
         MainActivity.emit("alert", org.json.JSONObject().put("kind", action).put("title", title).put("text", text))
     }
 

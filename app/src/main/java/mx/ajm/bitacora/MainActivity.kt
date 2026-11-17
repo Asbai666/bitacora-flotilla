@@ -102,6 +102,7 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); handleAlertIntent(intent) }
 
     override fun onResume() {
+        Siren.stop(this)   // al abrir la app se calla la sirena
         super.onResume(); current = WeakReference(this)
         emit("resume", JSONObject().put("track", store.summary(Prefs.today())).put("perms", permissionState()))
     }
@@ -128,7 +129,7 @@ class MainActivity : AppCompatActivity() {
         if (!fresh) try {
             val c = (java.net.URL(u.toString()).openConnection() as java.net.HttpURLConnection).apply {
                 connectTimeout = 10_000; readTimeout = 15_000
-                setRequestProperty("User-Agent", "BitacoraFlotilla/4.0 (Android; mx.ajm.bitacora)")
+                setRequestProperty("User-Agent", "BitacoraFlotilla/4.1 (Android; mx.ajm.bitacora)")
                 setRequestProperty("Referer", "https://github.com/Asbai666/bitacora-flotilla")
             }
             if (c.responseCode == 200) { val bytes = c.inputStream.use { it.readBytes() }; f.writeBytes(bytes) }

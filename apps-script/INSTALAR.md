@@ -58,3 +58,9 @@ TICKET BOMBA, RESPALDO), así se ven en su lugar también en la app de Google Sh
 flotando se acomodan solas la primera vez que la app lee cada bitácora (se buscan en Drive por su nombre).
 Si quieres repetirlo para tu bitácora, ejecuta la función **acomodarEvidencias** desde el editor.
 Pega el nuevo `Code.gs` y crea una **Nueva versión** de la implementación.
+
+## Versión 8 (app 4.1: Excel con fotos del tamaño del recuadro)
+
+Al exportar a XLSX se hace una copia temporal donde cada foto de evidencia pasa a imagen flotante del tamaño de su
+recuadro (Excel muestra en miniatura las fotos que van dentro de la celda); la copia se borra al terminar.
+Pega el nuevo `Code.gs` y crea una **Nueva versión** de la implementación.
