@@ -1465,6 +1465,24 @@ function renderExport() {
   sel.value = [...sel.options].some(x => x.value === prev) ? prev : "";
   $("xMonthBox").hidden = !(sheet.archives || []).length;
 }
+// Campos que debe llevar cada registro. Recorrido: todo lo de traslado. Descanso: fecha y asunto.
+// Si la fila tiene algún dato de carga, también se piden los datos de la carga (la factura no: suele llegar después).
+const FLD = { fTras: "Fecha traslado", kmIni: "Km inicial", kmFin: "Km final", asunto: "Asunto", de: "De", deC: "Coordenadas de", a: "A", aC: "Coordenadas a",
+  fCarga: "Fecha carga", importe: "Importe", litros: "Litros", ticket: "Ticket o folio" };
+const rowOpen = x => day.stage === "running" && day.row === x.r;
+function missingFields(x) {
+  const v = k => String(x[k] ?? "").trim() !== "";
+  const rest = /DESCANSO/i.test(x.asunto || ""), adj = /^AJUSTE/i.test(x.asunto || "");
+  const carga = ["fCarga", "importe", "litros", "ticket"].some(v);
+  const viaje = !rest && (["fTras", "kmIni", "kmFin", "de", "a", "asunto"].some(v) || !carga);
+  let need = [];
+  if (rest) need = ["fTras", "asunto"];
+  else if (viaje) need = adj ? ["fTras", "kmIni", "kmFin", "asunto"] : ["fTras", "kmIni", "kmFin", "asunto", "de", "deC", "a", "aC"];
+  if (carga) need = need.concat(["fCarga", "importe", "litros", "ticket"]);
+  if (rowOpen(x)) need = need.filter(k => !["kmFin", "a", "aC"].includes(k)); // el tramo en curso todavía no tiene llegada
+  return need.filter(k => !v(k));
+}
+let onlyMissing = false;
 function renderList() {
   renderAudit();
   const rows = sheet.rows || [];
@@ -1473,10 +1491,22 @@ function renderList() {
   $("mKm").textContent = fmt(ms.km); $("mLit").textContent = fmt(ms.lit, 2); $("mImp").textContent = fmt(ms.imp, 2); $("mRend").textContent = ms.rend !== null ? fmt(ms.rend, 2) : "—";
   const list = $("list"); list.textContent = "";
   if (!rows.length) list.appendChild(el("div", "empty", "Todavía no hay registros este mes."));
+  const nMiss = rows.filter(x => missingFields(x).length).length;
+  if (!nMiss) onlyMissing = false;
+  if (rows.length) {
+    const bar = el("div", "missbar" + (nMiss ? " has" : ""));
+    bar.appendChild(el("span", "", nMiss ? nMiss + (nMiss === 1 ? " registro incompleto" : " registros incompletos") + " · toca uno para completarlo" : "✓ Todos los registros están completos"));
+    if (nMiss) { const f = el("button", "ghost small", onlyMissing ? "Ver todos" : "Ver solo incompletos"); f.onclick = () => { onlyMissing = !onlyMissing; renderList(); }; bar.appendChild(f); }
+    list.appendChild(bar);
+  }
   rows.slice().reverse().forEach(x => {
     const rest = /DESCANSO/i.test(x.asunto), adj = /^AJUSTE/i.test(x.asunto);
-    const b = el("button", "rec" + (rest ? " restday" : "") + (adj ? " adj" : ""));
+    const miss = missingFields(x);
+    if (onlyMissing && !miss.length) return;
+    const b = el("button", "rec" + (rest ? " restday" : "") + (adj ? " adj" : "") + (miss.length ? " miss" : ""));
     const t = el("span", "t"); t.append(el("b", "", x.asunto || "Sin asunto"), el("span", "", rest ? "Sin movimiento" : (x.de || "—") + " → " + (x.a || "—")));
+    if (miss.length) t.appendChild(el("span", "falta", "Falta: " + miss.map(k => FLD[k]).join(", ")));
+    else if (rowOpen(x)) t.appendChild(el("span", "encurso", "En curso"));
     const km = x.kmIni !== "" && x.kmFin !== "" ? fmt(x.kmFin - x.kmIni) + " km" : "abierto";
     const m = el("span", "m", km);
     const g = !rest ? rowGps[x.fTras + "|" + x.r] ?? null : null;
@@ -1520,6 +1550,22 @@ function editRow(x) {
     const g4 = el("div", "grid"); g4.append(mk("fCarga", "Fecha carga", "date"), mk("importe", "Importe", "number", "num"), mk("litros", "Litros", "number", "num"));
     const g5 = el("div", "grid"); g5.append(mk("ticket", "# Ticket o folio"), mk("factura", "No. factura"));
     sh.append(g1, mk("asunto", "Asunto (obligatorio)"), g2, g3, el("h3", "", "Carga"), g4, g5);
+    const miss = missingFields(x);
+    if (miss.length) {
+      sh.insertBefore(el("div", "note bad", "Faltan " + miss.length + (miss.length === 1 ? " dato: " : " datos: ") + miss.map(k => FLD[k]).join(", ") + ". Están marcados en rojo."), g1);
+      miss.forEach(k => { if (f[k]) { f[k].classList.add("bad"); f[k].parentNode.classList.add("lbad"); } });
+      const here = el("button", "ghost small", "📍 Poner mi ubicación actual en lo que falte de coordenadas");
+      if (miss.includes("deC") || miss.includes("aC")) {
+        here.onclick = async () => { here.disabled = true; here.textContent = "Buscando GPS…";
+          const g = await nat("location"); here.disabled = false; here.textContent = "📍 Poner mi ubicación actual en lo que falte de coordenadas";
+          if (!g || !g.ok) { err.textContent = (g && g.error) || "Sin GPS"; err.hidden = false; return; }
+          const c = coordStr(+g.lat, +g.lon);
+          ["deC", "aC"].forEach(k => { if (miss.includes(k) && !f[k].value.trim()) { f[k].value = c; f[k].dispatchEvent(new Event("input")); } });
+          if (g.address) ["de", "a"].forEach(k => { if (miss.includes(k) && !f[k].value.trim()) { f[k].value = g.address; f[k].dispatchEvent(new Event("input")); } }); };
+        sh.insertBefore(here, g4.previousSibling);
+      }
+    }
+    Object.values(f).forEach(i => i.addEventListener("input", () => { if (i.value.trim()) { i.classList.remove("bad"); i.parentNode.classList.remove("lbad"); } }));
     const err = el("div", "err"); err.hidden = true; sh.appendChild(err);
     const act = el("div", "actions");
     const ok = el("button", "primary", "Guardar cambios"), del = el("button", "danger", "Borrar fila"), cancel = el("button", "ghost", "Cancelar");
