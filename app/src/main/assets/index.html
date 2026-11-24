@@ -215,6 +215,29 @@ label.lbad{color:var(--bad)}
 .mapcard{background:linear-gradient(180deg,#141d25,#0e1419);border:1px solid var(--line);border-radius:22px;padding:10px;display:grid;gap:10px}
 .mapwrap{position:relative;isolation:isolate;z-index:0;height:210px;border-radius:14px;overflow:hidden;border:1px solid #1f2a33;transition:height .25s}
 .mapwrap.tall{height:62vh}
+/* radar marítimo: barrido giratorio con estela, anillos de distancia y retícula, centrado en tu ubicación */
+:root{--rc:255,176,32} body.term{--rc:0,255,156}
+.radar{position:absolute;z-index:450;pointer-events:none;border-radius:50%;transform:translate(-50%,-50%);overflow:hidden;
+  border:1px solid rgba(var(--rc),.45);box-shadow:0 0 18px rgba(var(--rc),.25),inset 0 0 30px rgba(var(--rc),.12)}
+.radar .rings{position:absolute;inset:0;border-radius:50%;
+  background:repeating-radial-gradient(circle,transparent 0 calc(25% - 1px),rgba(var(--rc),.35) calc(25% - 1px) 25%),
+    linear-gradient(rgba(var(--rc),.28),rgba(var(--rc),.28)) center/1px 100% no-repeat,
+    linear-gradient(rgba(var(--rc),.28),rgba(var(--rc),.28)) center/100% 1px no-repeat}
+.radar .sweep{position:absolute;inset:0;border-radius:50%;animation:sweep 4s linear infinite;
+  background:conic-gradient(from 0deg,rgba(var(--rc),0) 0deg,rgba(var(--rc),0) 270deg,rgba(var(--rc),.10) 320deg,rgba(var(--rc),.38) 356deg,rgba(var(--rc),.95) 359.5deg,rgba(var(--rc),0) 360deg)}
+.radar .echo{position:absolute;inset:0;border-radius:50%;border:2px solid rgba(var(--rc),.7);animation:echo 4s ease-out infinite}
+.radar .rng{position:absolute;left:50%;font:600 9px/1 var(--mono);color:rgba(var(--rc),.85);transform:translate(4px,-100%);text-shadow:0 0 4px #000}
+.radar .r1{top:25%}.radar .r2{top:0;transform:translate(4px,2px)}
+@keyframes sweep{to{transform:rotate(360deg)}}
+@keyframes echo{0%{transform:scale(.05);opacity:.9}70%{opacity:.25}100%{transform:scale(1);opacity:0}}
+.radar.idle .sweep{animation-duration:7s;opacity:.6}
+/* vista compacta: grabando y sin paradas pendientes → mapa grande, lo demás oculto */
+.dettoggle{background:transparent;border:1px dashed var(--line);color:var(--muted);font:600 12px var(--mono);padding:7px;border-radius:8px}
+body.focus .mapwrap{height:max(280px,calc(100vh - 400px))}
+body.focus .tiles,body.focus #gStatus,body.focus #actHint,body.focus #today,body.focus #homeHint{display:none!important}
+body.focus .act{grid-template-columns:auto 1fr;justify-items:start;align-items:center;gap:6px;padding:8px 6px;border-radius:12px}
+body.focus .act .ic{width:30px;height:30px;border-radius:8px} body.focus .act .ic svg{width:19px;height:19px}
+body.focus .act b{font-size:11px}
 #map{position:absolute;inset:0;background:#0e1419}
 .leaflet-container{background:#0e1419;font-family:var(--body)}
 .leaflet-control-attribution{background:rgba(11,15,18,.7)!important;color:#8a9aa5!important;font-size:9px!important}
@@ -543,9 +566,11 @@ body.term .boot{display:grid;gap:6px;font-family:var(--mono);font-size:12.5px;co
     <section class="mapcard" aria-label="Recorrido del día">
       <div class="mapwrap" id="mapWrap">
         <div id="map"></div>
+        <div class="radar" id="radar" hidden aria-hidden="true"><div class="rings"></div><div class="sweep"></div><div class="echo"></div><span class="rng r1"></span><span class="rng r2"></span></div>
         <div class="mapbadge" id="mapBadge">Sin recorrido hoy</div>
         <div class="mapbtns"><button id="mapCenter" aria-label="Centrar en el recorrido">◎</button><button id="mapSize" aria-label="Agrandar el mapa">⤢</button></div>
       </div>
+      <button class="dettoggle" id="detToggle" hidden>▾ Ver detalles del día</button>
       <div class="tiles">
         <div class="tile"><div class="k">Km hoy</div><div class="v" id="tKm">0.0</div><div class="s" id="tKmS">GPS</div></div>
         <div class="tile"><div class="k">km/L</div><div class="v" id="tRend">—</div><div class="s" id="tRendS">km/L del mes</div></div>
@@ -638,7 +663,7 @@ body.term .boot{display:grid;gap:6px;font-family:var(--mono);font-size:12.5px;co
 
       <h3>Permisos para trabajar en segundo plano</h3>
       <div id="perms"></div>
-      <button class="ghost small" id="btnTest">Probar alerta</button>
+      <button class="ghost small" id="btnTest">Probar alerta (vibración)</button>
 
       <h3>Alertas</h3>
       <div class="grid">
@@ -660,7 +685,7 @@ body.term .boot{display:grid;gap:6px;font-family:var(--mono);font-size:12.5px;co
     <div class="card about">
       <div class="ajm big" aria-hidden="true"><span>AJM</span></div>
       <div>
-        <b>Bitácora Flotilla 4.4</b>
+        <b>Bitácora Flotilla 4.5</b>
         <div>Diseñada y desarrollada por <b>Asbai Jiménez</b></div>
         <div class="hint">Coordinación PI · Distrito Huehuetoca</div>
         <div class="hint">© 2026 Asbai Jiménez. Todos los derechos reservados.</div>
@@ -697,7 +722,7 @@ body.term .boot{display:grid;gap:6px;font-family:var(--mono);font-size:12.5px;co
     <div class="ok">Lector de odómetro (OCR) .. listo</div>
     <div class="ok">Enlace con Google Sheets .. listo</div>
     <div class="bar"><i></i></div>
-    <div class="t">BITÁCORA FLOTILLA v4.4</div>
+    <div class="t">BITÁCORA FLOTILLA v4.5</div>
     <div class="a">by Asbai Jiménez · AJM · Coordinación PI · Distrito Huehuetoca</div>
   </div>
 </div>

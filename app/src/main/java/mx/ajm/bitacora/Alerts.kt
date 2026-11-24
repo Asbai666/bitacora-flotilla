@@ -16,24 +16,23 @@ import java.util.Calendar
 
 object Alerts {
     const val CH_TRACK = "seguimiento"
-    const val CH_ALERT = "alertas_v2"   // v2: sin sonido del sistema; la app toca su propia sirena (ver Siren)
+    const val CH_ALERT = "alertas_v3"   // v3: sin sonido y sin vibración del sistema; la app vibra con su propio patrón (ver Siren)
     const val ID_TRACK = 1
     const val ID_START = 10
     const val ID_END = 11
     const val ID_STOP = 12
     const val ID_MOVE = 13
 
-    private val VIBRATE = longArrayOf(0, 600, 250, 600, 250, 900)
 
     fun channels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CH_TRACK, "Recorrido en curso", NotificationManager.IMPORTANCE_LOW).apply {
             description = "Aviso fijo mientras se graba el recorrido del día"
         })
-        try { nm.deleteNotificationChannel("alertas_v1") } catch (e: Exception) { }
-        nm.createNotificationChannel(NotificationChannel(CH_ALERT, "Alertas de bitácora (sirena)", NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "Paradas, llegada al domicilio, inicio y fin de día, GPS detenido. Suena una sirena por el canal de alarma."
-            enableVibration(true); vibrationPattern = VIBRATE
+        for (old in listOf("alertas_v1", "alertas_v2")) try { nm.deleteNotificationChannel(old) } catch (e: Exception) { }
+        nm.createNotificationChannel(NotificationChannel(CH_ALERT, "Alertas de bitácora (vibración)", NotificationManager.IMPORTANCE_HIGH).apply {
+            description = "Paradas, llegada al domicilio, inicio y fin de día, GPS detenido. Sin sonido: vibra con el patrón · · · — hasta que abras la app."
+            enableVibration(false)
             enableLights(true); lightColor = 0xFF00FF9C.toInt()
             setSound(null, null)
             setBypassDnd(true)
@@ -59,8 +58,9 @@ object Alerts {
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setVibrate(VIBRATE)
+            .setSilent(true)
             .setAutoCancel(true)
+            .setDeleteIntent(PendingIntent.getBroadcast(ctx, 77, Intent(ctx, AlarmReceiver::class.java).setAction(A_SILENCE), PendingIntent.FLAG_IMMUTABLE))
             .setContentIntent(openAppIntent(ctx, action))
             .setFullScreenIntent(openAppIntent(ctx, action), false)
             .build()
@@ -72,6 +72,7 @@ object Alerts {
     // ---------- recordatorios de inicio y fin ----------
     const val A_START = "mx.ajm.bitacora.START_CHECK"
     const val A_END = "mx.ajm.bitacora.END_CHECK"
+    const val A_SILENCE = "mx.ajm.bitacora.SILENCE"   // al descartar el aviso se detiene la vibración
 
     fun schedule(ctx: Context) {
         val prefs = Prefs(ctx)
@@ -110,6 +111,7 @@ class AlarmReceiver : BroadcastReceiver() {
         val p = Prefs(ctx)
         val workDay = p.isWorkDay() && !p.dayRest
         when (intent.action) {
+            Alerts.A_SILENCE -> { Siren.stop(ctx); return }
             Alerts.A_START -> {
                 val recording = p.tracking && p.trackDate == Prefs.today()
                 if (workDay && !p.dayStarted && (p.armed || recording)) { p.reminderCount = 0; Alerts.schedule(ctx); return }

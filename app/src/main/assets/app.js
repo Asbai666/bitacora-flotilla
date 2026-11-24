@@ -105,6 +105,7 @@ function mapRows(fn) {
 // Al quitar (delta −1) o insertar (delta +1) una fila en la hoja, las de abajo cambian de número
 const shiftRows = (at, delta) => mapRows(r => typeof r !== "number" ? r : delta < 0 ? (r === at ? null : r > at ? r - 1 : r) : (r >= at ? r + 1 : r));
 function renderQueue() {
+  try { applyFocus(); } catch (e) {}
   const n = queue.length, b = $("qInfo"); if (!b) return;
   b.hidden = !n; b.textContent = "";
   if (!n) return;
@@ -1063,11 +1064,30 @@ function initMap() {
   routeLine = L.polyline([], { color: routeColor(), weight: 4, opacity: .95, lineJoin: "round" }).addTo(map);
   marks = L.layerGroup().addTo(map);
   map.on("movestart", () => { if (!fitting) userMoved = true; });
+  map.on("move zoom resize", placeRadar);
+}
+// ---------- radar ----------
+let radarAt = null;
+function placeRadar() {
+  const r = $("radar");
+  if (!map || !radarAt) { r.hidden = true; return; }
+  const sz = map.getSize(), c = map.latLngToContainerPoint(radarAt);
+  const d = Math.round(Math.min(sz.x, sz.y) * 0.92);
+  Object.assign(r.style, { left: c.x + "px", top: c.y + "px", width: d + "px", height: d + "px" });
+  r.hidden = false;
+  // distancia real del radio del radar, para las marcas de alcance
+  try {
+    const m = map.distance(map.containerPointToLatLng(c), map.containerPointToLatLng([c.x + d / 2, c.y]));
+    const f = v => v >= 1000 ? fmt(v / 1000, v >= 10000 ? 0 : 1) + " km" : Math.round(v) + " m";
+    r.querySelector(".r1").textContent = f(m * 0.75); r.querySelector(".r2").textContent = f(m);
+  } catch (e) {}
 }
 function fitMap(pts, stops) {
   if (!map) return;
   fitting = true;
-  const all = pts.concat(stops.map(s => [s.lat, s.lon]));
+  let all = pts.concat(stops.map(s => [s.lat, s.lon]));
+  // grabando: el mapa sigue tu ubicación al centro (donde está el radar) y alcanza a mostrar todo el recorrido
+  if (day.stage === "running" && pts.length > 1) { const c = pts[pts.length - 1]; all = all.concat(all.map(q => [2 * c[0] - q[0], 2 * c[1] - q[1]])); }
   if (all.length > 1) map.fitBounds(L.latLngBounds(all), { padding: [26, 26], maxZoom: 16, animate: false });
   else if (all.length === 1) map.setView(all[0], 15, { animate: false });
   else if (home()) map.setView([home().lat, home().lon], 14, { animate: false });
@@ -1092,9 +1112,13 @@ function renderMap(t) {
     m.addTo(marks);
   });
   if (day.stage === "running" && pts.length) L.circleMarker(pts[pts.length - 1], { radius: 7, color: "#fff", weight: 2, fillColor: "#4aa3ff", fillOpacity: 1, className: "pulse" }).bindTooltip("Ubicación actual").addTo(marks);
+  const run = day.stage === "running";
+  radarAt = run && pts.length ? pts[pts.length - 1] : (run || (day.stage === "idle" && cfg.armed)) && home() ? [home().lat, home().lon] : null;
+  $("radar").classList.toggle("idle", !run);
   const sig = day.stage + "|" + pts.length + "|" + stops.length;
   if (sig !== lastSig && !userMoved) fitMap(pts, stops);
   lastSig = sig;
+  placeRadar();
   const badge = $("mapBadge");
   badge.textContent = pastDay() ? "Día anterior abierto · " + fmt(t.km || 0, 1) + " km" : day.stage === "running" ? "● Grabando · " + fmt(t.km || 0, 1) + " km" : day.stage === "closed" ? "Recorrido del día · " + fmt(t.km || 0, 1) + " km" : day.stage === "rest" ? "Día de descanso" : cfg.armed ? "Esperando la salida de casa" : "Sin recorrido hoy";
 }
@@ -1190,7 +1214,24 @@ function renderTimeline() {
   const e2 = el("button", "", "Exportar KML"); e2.onclick = () => shareKml(day.date);
   foot.append(e1, e2); box.appendChild(foot);
 }
-function renderToday() { renderCluster(); renderActions(); renderTimeline(); }
+// Vista compacta: mientras se graba y no hay nada que atender (paradas por registrar, asuntos faltantes,
+// día anterior abierto o registros en cola) solo se ven el mapa con radar y los tres botones. El menú de abajo no cambia.
+let showDetails = false;
+function needsAttention() {
+  return pendingStops().length > 0 || day.done.some(sinAsunto) || pastDay() || (typeof queue !== "undefined" && queue.length > 0);
+}
+function applyFocus() {
+  const run = day.stage === "running", att = run && needsAttention();
+  if (att) showDetails = false;
+  const focus = run && !att && !showDetails;
+  const was = document.body.classList.contains("focus");
+  document.body.classList.toggle("focus", focus);
+  const b = $("detToggle"); b.hidden = !run || att;
+  b.textContent = focus ? "▾ Ver detalles del día" : "▴ Ocultar detalles";
+  if (was !== focus && map) setTimeout(() => { map.invalidateSize(); placeRadar(); }, 60);
+}
+$("detToggle").onclick = () => { showDetails = !showDetails; applyFocus(); };
+function renderToday() { renderCluster(); renderActions(); renderTimeline(); applyFocus(); }
 $("actStart").onclick = () => openStart();
 $("actStop").onclick = () => openStop();
 $("actEnd").onclick = () => openFinish();

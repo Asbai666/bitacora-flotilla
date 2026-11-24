@@ -28,8 +28,8 @@ jobs:
       - name: Publicar descarga
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v4.4.${{ github.run_number }}
-          name: Bitácora Flotilla 4.4 · por Asbai Jiménez (AJM) · ${{ github.run_number }}
-          body: "Bitácora Flotilla 4.4 · por Asbai Jiménez (AJM). En Registros, las filas con campos vacíos salen en rojo con la lista de lo que falta, filtro Ver solo incompletos, y al abrirlas los campos faltantes se marcan en rojo para completarlos. Requiere Code.gs versión 9."
+          tag_name: v4.5.${{ github.run_number }}
+          name: Bitácora Flotilla 4.5 · por Asbai Jiménez (AJM) · ${{ github.run_number }}
+          body: "Bitácora Flotilla 4.5 · por Asbai Jiménez (AJM). Alertas sin sonido: vibración con patrón · · · — que se repite hasta abrir la app (máx. 3 min). Mapa con radar marítimo centrado en tu ubicación. Vista compacta mientras grabas sin paradas pendientes. Requiere Code.gs versión 9."
           files: BitacoraFlotilla.apk
           make_latest: true

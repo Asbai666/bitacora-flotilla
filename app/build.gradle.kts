@@ -11,8 +11,8 @@ android {
         applicationId = "mx.ajm.bitacora"
         minSdk = 26
         targetSdk = 35
-        versionCode = 20
-        versionName = "4.4"
+        versionCode = 21
+        versionName = "4.5"
     }
 
     signingConfigs {
